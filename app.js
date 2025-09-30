@@ -77,6 +77,7 @@ function startTimer() {
             updateTimer();
             updateTodayStats();
         }
+        updateBreakTimer();
     }, 1000);
 }
 
@@ -172,6 +173,7 @@ function breakIn() {
 
     saveState();
     updateUI();
+    updateBreakTimer();
     showNotification('Break started');
 }
 
@@ -195,6 +197,7 @@ function breakOut() {
     saveState();
     updateUI();
     updateBreaksList();
+    updateBreakTimer();
     showNotification(`Break ended (${formatDuration(breakDuration)})`);
 }
 
@@ -239,6 +242,8 @@ function updateUI() {
     if (analyticsTab && analyticsTab.classList.contains('active')) {
         updateAnalytics();
     }
+
+    updateBreakTimer();
 }
 
 function updateTodayStats() {
@@ -390,6 +395,20 @@ function updateBreaksList() {
     }
 }
 
+function updateBreakTimer() {
+    const timerEl = document.getElementById('breakTimer');
+    if (!timerEl) return;
+
+    if (state.isOnBreak && state.breakStartTime) {
+        const elapsed = Math.max(0, Date.now() - new Date(state.breakStartTime).getTime());
+        timerEl.textContent = `Break time: ${formatBreakTimer(elapsed)}`;
+        timerEl.style.display = 'inline-flex';
+    } else {
+        timerEl.textContent = 'Break time: 00:00:00';
+        timerEl.style.display = 'none';
+    }
+}
+
 // History Functions
 function loadHistory() {
     const history = getHistory();
@@ -484,8 +503,10 @@ function updateWeeklyChart() {
     const canvas = document.getElementById('weeklyChart');
     if (!canvas) return;
 
-    const displayWidth = canvas.offsetWidth;
-    if (!displayWidth) return;
+    const wrapper = canvas.parentElement;
+    const availableWidth = wrapper ? wrapper.clientWidth : canvas.clientWidth || canvas.offsetWidth;
+    if (!availableWidth) return;
+    const effectiveWidth = Math.max(availableWidth, 480);
     
     const ctx = canvas.getContext('2d');
     const history = getHistory();
@@ -502,22 +523,25 @@ function updateWeeklyChart() {
         days.push(date.toLocaleDateString('en-US', { weekday: 'short' }));
         
         if (history[dateStr]) {
-            hours.push((history[dateStr].totalWorked / 3600000).toFixed(1));
+            const worked = history[dateStr].totalWorked / 3600000;
+            hours.push(Number(worked.toFixed(1)));
         } else {
             hours.push(0);
         }
     }
     
     // Simple bar chart
-    drawBarChart(ctx, days, hours, displayWidth);
+    drawBarChart(ctx, days, hours, effectiveWidth);
 }
 
 function updateMonthlyChart() {
     const canvas = document.getElementById('monthlyChart');
     if (!canvas) return;
 
-    const displayWidth = canvas.offsetWidth;
-    if (!displayWidth) return;
+    const wrapper = canvas.parentElement;
+    const availableWidth = wrapper ? wrapper.clientWidth : canvas.clientWidth || canvas.offsetWidth;
+    if (!availableWidth) return;
+    const effectiveWidth = Math.max(availableWidth, 480);
     
     const ctx = canvas.getContext('2d');
     const history = getHistory();
@@ -534,106 +558,137 @@ function updateMonthlyChart() {
         days.push(i);
         
         if (history[dateStr]) {
-            hours.push((history[dateStr].totalWorked / 3600000).toFixed(1));
+            const worked = history[dateStr].totalWorked / 3600000;
+            hours.push(Number(worked.toFixed(1)));
         } else {
             hours.push(0);
         }
     }
     
-    drawLineChart(ctx, days, hours, displayWidth);
+    drawLineChart(ctx, days, hours, effectiveWidth);
 }
 
 function drawBarChart(ctx, labels, data, displayWidth) {
     const canvas = ctx.canvas;
-    const width = canvas.width = displayWidth * 2;
-    const height = canvas.height = 400;
+    const ratio = window.devicePixelRatio || 1;
+    const logicalWidth = displayWidth;
+    const logicalHeight = logicalWidth < 520 ? 260 : 360;
+
+    canvas.style.width = `${logicalWidth}px`;
+    canvas.style.height = `${logicalHeight}px`;
+    canvas.width = logicalWidth * ratio;
+    canvas.height = logicalHeight * ratio;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-    ctx.scale(2, 2);
-    
-    const padding = 40;
-    const innerWidth = displayWidth - padding * 2;
-    if (!labels.length || innerWidth <= 0) {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(ratio, ratio);
+
+    if (!labels.length) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data for this period', logicalWidth / 2, logicalHeight / 2);
         return;
     }
-    const barWidth = innerWidth / labels.length * 0.6;
-    const maxValue = Math.max(...data.map(Number), 10);
-    const scale = (200 - padding) / maxValue;
-    
-    // Draw bars
-    ctx.fillStyle = '#1e40af';
-    labels.forEach((label, i) => {
-        const step = innerWidth / labels.length;
-        const value = Number(data[i]);
+
+    const padding = 40;
+    const innerWidth = Math.max(logicalWidth - padding * 2, 1);
+    const chartHeight = Math.max(logicalHeight - padding * 2, 1);
+    const numericData = data.map(value => {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : 0;
+    });
+    const maxValue = Math.max(...numericData, 10);
+    const scaleY = chartHeight / maxValue;
+    const step = innerWidth / labels.length;
+    const barWidth = step * 0.6;
+
+    numericData.forEach((value, i) => {
         const x = padding + (i * step) + (step - barWidth) / 2;
-        const barHeight = value * scale;
-        const y = 200 - barHeight - padding;
-        
+        const barHeight = value * scaleY;
+        const y = logicalHeight - padding - barHeight;
+
+        ctx.fillStyle = '#1e40af';
         ctx.fillRect(x, y, barWidth, barHeight);
-        
-        // Draw value
+
         ctx.fillStyle = '#1e293b';
         ctx.font = '12px sans-serif';
         ctx.textAlign = 'center';
-        const labelValue = Number.isFinite(value)
-            ? value.toFixed(1).replace(/\.0$/, '')
-            : '0';
-        ctx.fillText(labelValue, x + barWidth / 2, y - 5);
-
-        // Draw label
-        ctx.fillText(label, x + barWidth / 2, 200 - padding + 20);
-
-        ctx.fillStyle = '#1e40af';
+        ctx.fillText(value.toFixed(1).replace(/\.0$/, ''), x + barWidth / 2, y - 6);
+        ctx.fillText(labels[i] ?? '', x + barWidth / 2, logicalHeight - padding + 20);
     });
 }
 
 function drawLineChart(ctx, labels, data, displayWidth) {
     const canvas = ctx.canvas;
-    const width = canvas.width = displayWidth * 2;
-    const height = canvas.height = 400;
+    const ratio = window.devicePixelRatio || 1;
+    const logicalWidth = displayWidth;
+    const logicalHeight = logicalWidth < 520 ? 260 : 360;
+
+    canvas.style.width = `${logicalWidth}px`;
+    canvas.style.height = `${logicalHeight}px`;
+    canvas.width = logicalWidth * ratio;
+    canvas.height = logicalHeight * ratio;
 
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, width, height);
-    ctx.scale(2, 2);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(ratio, ratio);
 
-    const padding = 40;
-    const maxValue = Math.max(...data.map(Number), 10);
-    const scale = (200 - padding) / maxValue;
-
-    // Prevent division by zero
-    const divisor = Math.max(1, labels.length - 1);
     if (!labels.length) {
+        ctx.fillStyle = '#64748b';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('No data for this period', logicalWidth / 2, logicalHeight / 2);
         return;
     }
 
-    // Draw line
+    const padding = 40;
+    const chartWidth = Math.max(logicalWidth - padding * 2, 1);
+    const chartHeight = Math.max(logicalHeight - padding * 2, 1);
+    const numericData = data.map(value => {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : 0;
+    });
+    const maxValue = Math.max(...numericData, 10);
+    const scaleY = chartHeight / maxValue;
+    const divisor = Math.max(1, labels.length - 1);
+
     ctx.strokeStyle = '#1e40af';
     ctx.lineWidth = 2;
     ctx.beginPath();
 
-    labels.forEach((label, i) => {
-        const x = padding + (i * (displayWidth - padding * 2) / divisor);
-        const y = 200 - (Number(data[i]) * scale) - padding;
-
+    numericData.forEach((value, i) => {
+        const x = labels.length === 1
+            ? padding + chartWidth / 2
+            : padding + (chartWidth / divisor) * i;
+        const y = logicalHeight - padding - (value * scaleY);
         if (i === 0) {
             ctx.moveTo(x, y);
         } else {
             ctx.lineTo(x, y);
         }
     });
-
     ctx.stroke();
 
-    // Draw points
     ctx.fillStyle = '#1e40af';
-    labels.forEach((label, i) => {
-        const x = padding + (i * (displayWidth - padding * 2) / divisor);
-        const y = 200 - (Number(data[i]) * scale) - padding;
-
+    numericData.forEach((value, i) => {
+        const x = labels.length === 1
+            ? padding + chartWidth / 2
+            : padding + (chartWidth / divisor) * i;
+        const y = logicalHeight - padding - (value * scaleY);
         ctx.beginPath();
         ctx.arc(x, y, 3, 0, Math.PI * 2);
         ctx.fill();
+    });
+
+    ctx.fillStyle = '#1e293b';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center';
+    labels.forEach((label, i) => {
+        const x = labels.length === 1
+            ? padding + chartWidth / 2
+            : padding + (chartWidth / divisor) * i;
+        ctx.fillText(label, x, logicalHeight - padding + 20);
     });
 }
 
@@ -1216,6 +1271,13 @@ function formatDuration(ms) {
         return `${hours}h ${minutes}m`;
     }
     return `${minutes}m`;
+}
+
+function formatBreakTimer(ms) {
+    const hours = Math.floor(ms / 3600000);
+    const minutes = Math.floor((ms % 3600000) / 60000);
+    const seconds = Math.floor((ms % 60000) / 1000);
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
 function formatDate(date) {

@@ -610,13 +610,6 @@
                     <h3>Notifications</h3>
                     <div class="toggle-switch">
                         <label class="switch">
-                            <input type="checkbox" id="breakReminder" onchange="saveSettings()">
-                            <span class="slider"></span>
-                        </label>
-                        <span>Break Reminder (every 2 hours)</span>
-                    </div>
-                    <div class="toggle-switch">
-                        <label class="switch">
                             <input type="checkbox" id="checkoutReminder" onchange="saveSettings()">
                             <span class="slider"></span>
                         </label>
@@ -717,7 +710,6 @@
             monthlyTarget: 160,
             dailyHours: 8,
             overtimeThreshold: 8,
-            breakReminder: false,
             checkoutReminder: false,
             overtimeAlert: false
         };
@@ -1320,7 +1312,6 @@
             document.getElementById('monthlyTargetSetting').value = settings.monthlyTarget;
             document.getElementById('dailyHoursSetting').value = settings.dailyHours;
             document.getElementById('overtimeThreshold').value = settings.overtimeThreshold;
-            document.getElementById('breakReminder').checked = settings.breakReminder;
             document.getElementById('checkoutReminder').checked = settings.checkoutReminder;
             document.getElementById('overtimeAlert').checked = settings.overtimeAlert;
             
@@ -1331,7 +1322,6 @@
             settings.monthlyTarget = Number(document.getElementById('monthlyTargetSetting').value);
             settings.dailyHours = Number(document.getElementById('dailyHoursSetting').value);
             settings.overtimeThreshold = Number(document.getElementById('overtimeThreshold').value);
-            settings.breakReminder = document.getElementById('breakReminder').checked;
             settings.checkoutReminder = document.getElementById('checkoutReminder').checked;
             settings.overtimeAlert = document.getElementById('overtimeAlert').checked;
             
@@ -1676,21 +1666,6 @@
             // Clear existing intervals
             Object.values(reminderIntervals).forEach(clearInterval);
             reminderIntervals = {};
-            
-            // Break reminder (every 2 hours)
-            if (settings.breakReminder && state.isCheckedIn && !state.isOnBreak) {
-                reminderIntervals.break = setInterval(() => {
-                    if (state.isCheckedIn && !state.isOnBreak) {
-                        const now = new Date();
-                        const checkIn = new Date(state.checkInTime);
-                        const workedMs = now - checkIn - state.totalBreakTime;
-                        
-                        if (workedMs >= 2 * 3600000) {
-                            sendNotification('Break Reminder', 'You\'ve been working for 2 hours. Time for a break!');
-                        }
-                    }
-                }, 1800000); // 30 minutes
-            }
             
             // Checkout reminder (at expected checkout time)
             if (settings.checkoutReminder && state.isCheckedIn) {

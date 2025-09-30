@@ -14,7 +14,9 @@ let settings = {
     dailyHours: 8,
     overtimeThreshold: 8,
     checkoutReminder: false,
-    overtimeAlert: false
+    overtimeAlert: false,
+    monthStartDay: 1,
+    monthEndDay: 31
 };
 
 let timerInterval;
@@ -285,34 +287,34 @@ function updateTodayStats() {
 function updateMonthlyProgress() {
     const history = getHistory();
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+    const { start: cycleStart, end: cycleEnd } = getCycleRange(now);
     let monthlyTotal = 0;
-    
+
     for (const [date, entry] of Object.entries(history)) {
         const entryDate = new Date(date);
-        if (entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear) {
+        if (entryDate >= cycleStart && entryDate <= cycleEnd) {
             monthlyTotal += entry.totalWorked;
         }
     }
-    
+
     // Add current session
     if (state.isCheckedIn && state.checkInTime) {
-        const now = new Date();
         const checkIn = new Date(state.checkInTime);
         let currentSession = now - checkIn - state.totalBreakTime;
-        
+
         if (state.isOnBreak && state.breakStartTime) {
             const currentBreak = now - new Date(state.breakStartTime);
             currentSession -= currentBreak;
         }
-        
-        monthlyTotal += currentSession;
+
+        if (checkIn >= cycleStart && checkIn <= cycleEnd) {
+            monthlyTotal += currentSession;
+        }
     }
-    
+
     const monthlyHours = monthlyTotal / 3600000;
     const targetHours = settings.monthlyTarget;
-    const percentage = Math.min(100, (monthlyHours / targetHours) * 100);
+    const percentage = targetHours > 0 ? Math.min(100, (monthlyHours / targetHours) * 100) : 0;
     
     // Update progress ring
     const circumference = 2 * Math.PI * 80;
@@ -324,18 +326,32 @@ function updateMonthlyProgress() {
     document.getElementById('progressText').textContent = `${Math.round(percentage)}%`;
     document.getElementById('progressHours').textContent = 
         `${monthlyHours.toFixed(1)} / ${targetHours} hrs`;
-    
+
     document.getElementById('monthlyWorked').textContent = `${monthlyHours.toFixed(1)}h`;
     document.getElementById('monthlyTarget').textContent = `${targetHours}h`;
-    
-    // Calculate required daily hours for remaining days
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const daysPassed = now.getDate();
-    const remainingDays = daysInMonth - daysPassed;
+
+    const todayStart = startOfDay(now);
+    const effectiveStart = todayStart < cycleStart ? startOfDay(cycleStart) : todayStart;
     const remainingHours = Math.max(0, targetHours - monthlyHours);
-    const dailyRequired = remainingDays > 0 ? (remainingHours / remainingDays).toFixed(1) : 0;
-    
-    document.getElementById('dailyRequired').textContent = `${dailyRequired}h`;
+    let remainingDays = 0;
+    if (effectiveStart <= cycleEnd) {
+        const diffMs = endOfDay(cycleEnd).getTime() - effectiveStart.getTime();
+        remainingDays = Math.floor(diffMs / 86400000) + 1;
+    }
+    const dailyRequired = remainingDays > 0 ? (remainingHours / remainingDays) : 0;
+
+    document.getElementById('dailyRequired').textContent = `${dailyRequired.toFixed(1)}h`;
+
+    const goalBox = document.getElementById('dailyGoalMessage');
+    if (goalBox) {
+        if (remainingHours <= 0) {
+            goalBox.textContent = 'You have already met your target for this cycle. Great job!';
+        } else if (remainingDays <= 0) {
+            goalBox.textContent = `Cycle ending ${cycleEnd.toLocaleDateString()} is complete. You are short ${remainingHours.toFixed(1)}h.`;
+        } else {
+            goalBox.textContent = `To hit ${targetHours}h by ${cycleEnd.toLocaleDateString()}, average ${dailyRequired.toFixed(1)}h per day for the next ${remainingDays} day(s).`;
+        }
+    }
 }
 
 function updateBreaksList() {
@@ -622,8 +638,7 @@ function drawLineChart(ctx, labels, data, displayWidth) {
 function updateAnalyticsStats() {
     const history = getHistory();
     const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+    const { start: cycleStart, end: cycleEnd } = getCycleRange(now);
     
     let totalDays = 0;
     let totalHours = 0;
@@ -632,14 +647,31 @@ function updateAnalyticsStats() {
     
     for (const [date, entry] of Object.entries(history)) {
         const entryDate = new Date(date);
-        if (entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear) {
+        if (entryDate >= cycleStart && entryDate <= cycleEnd) {
             totalDays++;
             totalHours += entry.totalWorked;
             totalBreaks += entry.totalBreak;
             totalOvertime += entry.overtime || 0;
         }
     }
-    
+
+    if (state.isCheckedIn && state.checkInTime) {
+        const checkIn = new Date(state.checkInTime);
+        if (checkIn >= cycleStart && checkIn <= cycleEnd) {
+            const nowMs = Date.now();
+            let worked = nowMs - checkIn.getTime() - state.totalBreakTime;
+            if (state.isOnBreak && state.breakStartTime) {
+                worked -= (nowMs - new Date(state.breakStartTime).getTime());
+            }
+            worked = Math.max(0, worked);
+            totalHours += worked;
+            totalBreaks += state.totalBreakTime;
+            if (!history[checkIn.toDateString()]) {
+                totalDays = Math.max(totalDays, 1);
+            }
+        }
+    }
+
     const avgDaily = totalDays > 0 ? totalHours / totalDays / 3600000 : 0;
     const avgBreak = totalDays > 0 ? totalBreaks / totalDays / 60000 : 0;
     
@@ -654,12 +686,17 @@ function loadSettings() {
     if (saved) {
         settings = { ...settings, ...JSON.parse(saved) };
     }
+
+    settings.monthStartDay = clampDayValue(settings.monthStartDay || 1);
+    settings.monthEndDay = clampDayValue(settings.monthEndDay || 31);
     
     document.getElementById('monthlyTargetSetting').value = settings.monthlyTarget;
     document.getElementById('dailyHoursSetting').value = settings.dailyHours;
     document.getElementById('overtimeThreshold').value = settings.overtimeThreshold;
     document.getElementById('checkoutReminder').checked = settings.checkoutReminder;
     document.getElementById('overtimeAlert').checked = settings.overtimeAlert;
+    document.getElementById('monthStartDay').value = settings.monthStartDay;
+    document.getElementById('monthEndDay').value = settings.monthEndDay;
     
     loadLeavesList();
 }
@@ -670,7 +707,13 @@ function saveSettings() {
     settings.overtimeThreshold = Number(document.getElementById('overtimeThreshold').value);
     settings.checkoutReminder = document.getElementById('checkoutReminder').checked;
     settings.overtimeAlert = document.getElementById('overtimeAlert').checked;
-    
+    const startDayInput = Number(document.getElementById('monthStartDay').value);
+    const endDayInput = Number(document.getElementById('monthEndDay').value);
+    settings.monthStartDay = clampDayValue(startDayInput || settings.monthStartDay);
+    settings.monthEndDay = clampDayValue(endDayInput || settings.monthEndDay);
+    document.getElementById('monthStartDay').value = settings.monthStartDay;
+    document.getElementById('monthEndDay').value = settings.monthEndDay;
+
     localStorage.setItem('workSettings', JSON.stringify(settings));
     updateUI();
     setupReminders();
@@ -980,6 +1023,71 @@ function formatDate(date) {
         month: 'short',
         day: 'numeric'
     });
+}
+
+function clampDayValue(day) {
+    if (Number.isNaN(day)) return 1;
+    return Math.min(31, Math.max(1, Math.round(day)));
+}
+
+function startOfDay(date) {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+function endOfDay(date) {
+    const d = new Date(date);
+    d.setHours(23, 59, 59, 999);
+    return d;
+}
+
+function createDateSafe(year, month, day) {
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    return new Date(year, month, Math.min(day, lastDay));
+}
+
+function getCycleRange(referenceDate = new Date()) {
+    const startDay = clampDayValue(settings.monthStartDay || 1);
+    const endDay = clampDayValue(settings.monthEndDay || 31);
+    const ref = new Date(referenceDate);
+    const year = ref.getFullYear();
+    const month = ref.getMonth();
+    const day = ref.getDate();
+
+    let start;
+    let end;
+
+    if (startDay <= endDay) {
+        if (day < startDay) {
+            const prev = new Date(year, month - 1, 1);
+            start = startOfDay(createDateSafe(prev.getFullYear(), prev.getMonth(), startDay));
+            end = endOfDay(createDateSafe(prev.getFullYear(), prev.getMonth(), endDay));
+        } else if (day > endDay) {
+            const next = new Date(year, month + 1, 1);
+            start = startOfDay(createDateSafe(next.getFullYear(), next.getMonth(), startDay));
+            end = endOfDay(createDateSafe(next.getFullYear(), next.getMonth(), endDay));
+        } else {
+            start = startOfDay(createDateSafe(year, month, startDay));
+            end = endOfDay(createDateSafe(year, month, endDay));
+        }
+    } else {
+        if (day >= startDay) {
+            const next = new Date(year, month + 1, 1);
+            start = startOfDay(createDateSafe(year, month, startDay));
+            end = endOfDay(createDateSafe(next.getFullYear(), next.getMonth(), endDay));
+        } else if (day <= endDay) {
+            const prev = new Date(year, month - 1, 1);
+            start = startOfDay(createDateSafe(prev.getFullYear(), prev.getMonth(), startDay));
+            end = endOfDay(createDateSafe(year, month, endDay));
+        } else {
+            const next = new Date(year, month + 1, 1);
+            start = startOfDay(createDateSafe(year, month, startDay));
+            end = endOfDay(createDateSafe(next.getFullYear(), next.getMonth(), endDay));
+        }
+    }
+
+    return { start, end };
 }
 
 function downloadFile(content, filename, type) {

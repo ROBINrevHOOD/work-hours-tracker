@@ -215,6 +215,17 @@
             font-size: 15px;
         }
 
+        .break-timer {
+            display: none;
+            margin: 0 auto;
+            padding: 6px 14px;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.18);
+            font-size: 14px;
+            letter-spacing: 0.3px;
+            width: fit-content;
+        }
+
         .stat-item {
             text-align: center;
             padding: 15px;
@@ -377,6 +388,27 @@
             margin: 20px 0;
         }
 
+        .chart-scroll {
+            width: 100%;
+            overflow-x: auto;
+            padding-bottom: 10px;
+        }
+
+        .chart-scroll::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .chart-scroll::-webkit-scrollbar-thumb {
+            background: rgba(30, 64, 175, 0.35);
+            border-radius: 999px;
+        }
+
+        .chart-canvas {
+            width: 100%;
+            min-width: 480px;
+            display: block;
+        }
+
         @media (max-width: 768px) {
             .container {
                 padding: 10px;
@@ -393,6 +425,10 @@
             .tab {
                 padding: 8px 12px;
                 font-size: 14px;
+            }
+
+            .chart-canvas {
+                min-width: 560px;
             }
         }
 
@@ -479,6 +515,7 @@
             <div class="card status-card">
                 <h2 id="currentStatus">Not Checked In</h2>
                 <div class="timer" id="timer">00:00:00</div>
+                <div class="break-timer" id="breakTimer">Break time: 00:00:00</div>
                 <div id="currentDate"></div>
             </div>
 
@@ -575,7 +612,9 @@
         <div class="tab-content" id="analytics">
             <div class="card">
                 <h3>Weekly Overview</h3>
-                <canvas id="weeklyChart"></canvas>
+                <div class="chart-scroll">
+                    <canvas id="weeklyChart" class="chart-canvas"></canvas>
+                </div>
                 <div class="stats-grid" style="margin-top: 20px;">
                     <div class="stat-item">
                         <div class="stat-value" id="avgDaily">0h</div>
@@ -594,7 +633,9 @@
 
             <div class="card">
                 <h3>Monthly Pattern</h3>
-                <canvas id="monthlyChart"></canvas>
+                <div class="chart-scroll">
+                    <canvas id="monthlyChart" class="chart-canvas"></canvas>
+                </div>
             </div>
         </div>
 

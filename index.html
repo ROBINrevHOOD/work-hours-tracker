@@ -721,11 +721,16 @@
         function init() {
             loadState();
             loadSettings();
+
+            const historyMonthInput = document.getElementById('historyMonth');
+            if (historyMonthInput) {
+                historyMonthInput.value = new Date().toISOString().slice(0, 7);
+            }
+
             updateUI();
             startTimer();
             setupEventListeners();
             loadHistory();
-            updateAnalytics();
             requestNotificationPermission();
             setupReminders();
             
@@ -736,9 +741,6 @@
                 month: 'long',
                 day: 'numeric'
             });
-            
-            // Set current month in history filter
-            document.getElementById('historyMonth').value = new Date().toISOString().slice(0, 7);
         }
 
         // Event Listeners
@@ -923,6 +925,11 @@
             updateTodayStats();
             updateMonthlyProgress();
             updateBreaksList();
+
+            const analyticsTab = document.getElementById('analytics');
+            if (analyticsTab && analyticsTab.classList.contains('active')) {
+                updateAnalytics();
+            }
         }
 
         function updateTodayStats() {
@@ -1139,14 +1146,23 @@
 
         // Analytics Functions
         function updateAnalytics() {
+            updateAnalyticsStats();
+
+            const analyticsTab = document.getElementById('analytics');
+            if (!analyticsTab || !analyticsTab.classList.contains('active')) {
+                return;
+            }
+
             updateWeeklyChart();
             updateMonthlyChart();
-            updateAnalyticsStats();
         }
 
         function updateWeeklyChart() {
             const canvas = document.getElementById('weeklyChart');
             if (!canvas) return;
+
+            const displayWidth = canvas.offsetWidth;
+            if (!displayWidth) return;
             
             const ctx = canvas.getContext('2d');
             const history = getHistory();
@@ -1170,12 +1186,15 @@
             }
             
             // Simple bar chart
-            drawBarChart(ctx, days, hours, 'Hours Worked');
+            drawBarChart(ctx, days, hours, displayWidth);
         }
 
         function updateMonthlyChart() {
             const canvas = document.getElementById('monthlyChart');
             if (!canvas) return;
+
+            const displayWidth = canvas.offsetWidth;
+            if (!displayWidth) return;
             
             const ctx = canvas.getContext('2d');
             const history = getHistory();
@@ -1198,27 +1217,34 @@
                 }
             }
             
-            drawLineChart(ctx, days, hours, 'Daily Hours This Month');
+            drawLineChart(ctx, days, hours, displayWidth);
         }
 
-        function drawBarChart(ctx, labels, data, title) {
+        function drawBarChart(ctx, labels, data, displayWidth) {
             const canvas = ctx.canvas;
-            const width = canvas.width = canvas.offsetWidth * 2;
+            const width = canvas.width = displayWidth * 2;
             const height = canvas.height = 400;
-            
+
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, width, height);
             ctx.scale(2, 2);
             
             const padding = 40;
-            const barWidth = (canvas.offsetWidth - padding * 2) / labels.length * 0.6;
+            const innerWidth = displayWidth - padding * 2;
+            if (!labels.length || innerWidth <= 0) {
+                return;
+            }
+            const barWidth = innerWidth / labels.length * 0.6;
             const maxValue = Math.max(...data.map(Number), 10);
             const scale = (200 - padding) / maxValue;
             
             // Draw bars
             ctx.fillStyle = '#1e40af';
             labels.forEach((label, i) => {
-                const x = padding + (i * (canvas.offsetWidth - padding * 2) / labels.length) + 20;
-                const barHeight = data[i] * scale;
+                const step = innerWidth / labels.length;
+                const value = Number(data[i]);
+                const x = padding + (i * step) + (step - barWidth) / 2;
+                const barHeight = value * scale;
                 const y = 200 - barHeight - padding;
                 
                 ctx.fillRect(x, y, barWidth, barHeight);
@@ -1227,20 +1253,24 @@
                 ctx.fillStyle = '#1e293b';
                 ctx.font = '12px sans-serif';
                 ctx.textAlign = 'center';
-                ctx.fillText(data[i], x + barWidth / 2, y - 5);
-                
+                const labelValue = Number.isFinite(value)
+                    ? value.toFixed(1).replace(/\.0$/, '')
+                    : '0';
+                ctx.fillText(labelValue, x + barWidth / 2, y - 5);
+
                 // Draw label
                 ctx.fillText(label, x + barWidth / 2, 200 - padding + 20);
-                
+
                 ctx.fillStyle = '#1e40af';
             });
         }
 
-        function drawLineChart(ctx, labels, data, title) {
+        function drawLineChart(ctx, labels, data, displayWidth) {
             const canvas = ctx.canvas;
-            const width = canvas.width = canvas.offsetWidth * 2;
+            const width = canvas.width = displayWidth * 2;
             const height = canvas.height = 400;
 
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
             ctx.clearRect(0, 0, width, height);
             ctx.scale(2, 2);
 
@@ -1250,6 +1280,9 @@
 
             // Prevent division by zero
             const divisor = Math.max(1, labels.length - 1);
+            if (!labels.length) {
+                return;
+            }
 
             // Draw line
             ctx.strokeStyle = '#1e40af';
@@ -1257,8 +1290,8 @@
             ctx.beginPath();
 
             labels.forEach((label, i) => {
-                const x = padding + (i * (canvas.offsetWidth - padding * 2) / divisor);
-                const y = 200 - (data[i] * scale) - padding;
+                const x = padding + (i * (displayWidth - padding * 2) / divisor);
+                const y = 200 - (Number(data[i]) * scale) - padding;
 
                 if (i === 0) {
                     ctx.moveTo(x, y);
@@ -1272,8 +1305,8 @@
             // Draw points
             ctx.fillStyle = '#1e40af';
             labels.forEach((label, i) => {
-                const x = padding + (i * (canvas.offsetWidth - padding * 2) / divisor);
-                const y = 200 - (data[i] * scale) - padding;
+                const x = padding + (i * (displayWidth - padding * 2) / divisor);
+                const y = 200 - (Number(data[i]) * scale) - padding;
 
                 ctx.beginPath();
                 ctx.arc(x, y, 3, 0, Math.PI * 2);
@@ -1427,31 +1460,41 @@
         }
 
         function saveEditEntry() {
-            const date = new Date(document.getElementById('editDate').value);
+            const dateValue = document.getElementById('editDate').value;
             const checkInTime = document.getElementById('editCheckIn').value;
             const checkOutTime = document.getElementById('editCheckOut').value;
             const breakMinutes = Number(document.getElementById('editBreak').value);
-            
-            if (!checkInTime || !checkOutTime) {
+
+            if (!dateValue || !checkInTime || !checkOutTime) {
                 alert('Please fill all required fields');
                 return;
             }
-            
-            const checkIn = new Date(date);
+
+            const [year, month, day] = dateValue.split('-').map(Number);
+            if (!year || !month || !day) {
+                alert('Invalid date');
+                return;
+            }
+
             const [inHour, inMin] = checkInTime.split(':').map(Number);
-            checkIn.setHours(inHour, inMin, 0);
-            
-            const checkOut = new Date(date);
             const [outHour, outMin] = checkOutTime.split(':').map(Number);
-            checkOut.setHours(outHour, outMin, 0);
-            
+
+            const checkIn = new Date(year, month - 1, day, inHour || 0, inMin || 0, 0, 0);
+            const checkOut = new Date(year, month - 1, day, outHour || 0, outMin || 0, 0, 0);
+
             const totalBreak = breakMinutes * 60000;
             const totalWorked = checkOut - checkIn - totalBreak;
+
+            if (totalWorked < 0) {
+                alert('Check-out time must be after check-in time once breaks are deducted.');
+                return;
+            }
             const overtime = Math.max(0, (totalWorked / 3600000) - settings.overtimeThreshold) * 3600000;
             
             const history = getHistory();
-            history[date.toDateString()] = {
-                date: date.toDateString(),
+            const historyKey = new Date(year, month - 1, day).toDateString();
+            history[historyKey] = {
+                date: historyKey,
                 checkIn: checkIn.toISOString(),
                 checkOut: checkOut.toISOString(),
                 breaks: [],
@@ -1724,24 +1767,15 @@
 
         // Service Worker for PWA
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('data:text/javascript,' + encodeURIComponent(`
-                self.addEventListener('install', e => {
-                    e.waitUntil(
-                        caches.open('v1').then(cache => {
-                            return cache.addAll(['/']);
-                        })
-                    );
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('sw.js').catch(error => {
+                    console.error('Service worker registration failed:', error);
                 });
-
-                self.addEventListener('fetch', e => {
-                    e.respondWith(
-                        caches.match(e.request).then(response => {
-                            return response || fetch(e.request);
-                        })
-                    );
-                });
-            `));
+            });
         }
 
         // Initialize on load
         window.addEventListener('load', init);
+    </script>
+</body>
+</html>

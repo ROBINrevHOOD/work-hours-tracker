@@ -23,20 +23,219 @@ let settings = {
 let timerInterval;
 let reminderIntervals = {};
 
+const SUPABASE_URL = window.ENV?.SUPABASE_URL;
+const SUPABASE_ANON_KEY = window.ENV?.SUPABASE_ANON_KEY;
+const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase)
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+    : null;
+
+if (!supabase) {
+    console.warn('Supabase client not configured; falling back to local storage only.');
+}
+
+let historyCache = {};
+let leavesCache = [];
+let historyLoaded = false;
+let leavesLoaded = false;
+
+async function ensureHistoryLoaded(force = false) {
+    if (historyLoaded && !force) return;
+
+    if (supabase) {
+        try {
+            const { data, error } = await supabase
+                .from('work_sessions')
+                .select('*');
+            if (!error && Array.isArray(data)) {
+                historyCache = {};
+                data.forEach(row => {
+                    if (!row.session_date) return;
+                    historyCache[row.session_date] = {
+                        date: row.session_date,
+                        checkIn: row.check_in,
+                        checkOut: row.check_out,
+                        breaks: row.breaks || [],
+                        totalBreak: row.total_break_ms || 0,
+                        totalWorked: row.total_worked_ms || 0,
+                        overtime: row.overtime_ms || 0
+                    };
+                });
+                localStorage.setItem('workHistory', JSON.stringify(historyCache));
+                historyLoaded = true;
+                return;
+            }
+        } catch (error) {
+            console.error('Failed to load work history from Supabase', error);
+        }
+    }
+
+    const local = localStorage.getItem('workHistory');
+    historyCache = local ? JSON.parse(local) : {};
+    historyLoaded = true;
+}
+
+async function ensureLeavesLoaded(force = false) {
+    if (leavesLoaded && !force) return;
+
+    if (supabase) {
+        try {
+            const { data, error } = await supabase
+                .from('leaves')
+                .select('*')
+                .order('leave_date', { ascending: false });
+            if (!error && Array.isArray(data)) {
+                leavesCache = data.map(row => ({
+                    id: row.id || crypto.randomUUID(),
+                    type: row.leave_type,
+                    date: row.leave_date,
+                    notes: row.notes || ''
+                }));
+                localStorage.setItem('leaves', JSON.stringify(leavesCache));
+                leavesLoaded = true;
+                return;
+            }
+        } catch (error) {
+            console.error('Failed to load leaves from Supabase', error);
+        }
+    }
+
+    const local = localStorage.getItem('leaves');
+    leavesCache = local ? JSON.parse(local) : [];
+    // ensure each has id
+    leavesCache = leavesCache.map(leave => ({
+        id: leave.id || crypto.randomUUID(),
+        type: leave.type,
+        date: leave.date,
+        notes: leave.notes || ''
+    }));
+    localStorage.setItem('leaves', JSON.stringify(leavesCache));
+    leavesLoaded = true;
+}
+
+async function saveHistoryEntry(entry) {
+    historyCache[entry.date] = entry;
+    localStorage.setItem('workHistory', JSON.stringify(historyCache));
+    historyLoaded = true;
+
+    if (supabase) {
+        try {
+            const { error } = await supabase.from('work_sessions').upsert({
+                session_date: entry.date,
+                check_in: entry.checkIn,
+                check_out: entry.checkOut,
+                breaks: entry.breaks || [],
+                total_break_ms: entry.totalBreak || 0,
+                total_worked_ms: entry.totalWorked || 0,
+                overtime_ms: entry.overtime || 0
+            }, { onConflict: 'session_date' });
+            if (error) {
+                console.error('Failed to upsert work session to Supabase', error);
+            }
+        } catch (error) {
+            console.error('Failed to upsert work session to Supabase', error);
+        }
+    }
+}
+
+async function replaceHistoryCache(newHistory) {
+    const normalized = normalizeHistoryObject(newHistory);
+    historyCache = normalized;
+    localStorage.setItem('workHistory', JSON.stringify(historyCache));
+    historyLoaded = true;
+
+    if (supabase) {
+        const rows = Object.values(historyCache).map(entry => ({
+            session_date: entry.date,
+            check_in: entry.checkIn,
+            check_out: entry.checkOut,
+            breaks: entry.breaks || [],
+            total_break_ms: entry.totalBreak || 0,
+            total_worked_ms: entry.totalWorked || 0,
+            overtime_ms: entry.overtime || 0
+        }));
+
+        try {
+            const { data: existingDates } = await supabase
+                .from('work_sessions')
+                .select('session_date');
+            if (existingDates && Array.isArray(existingDates)) {
+                const keep = new Set(rows.map(row => row.session_date));
+                const stale = existingDates
+                    .map(row => row.session_date)
+                    .filter(date => !keep.has(date));
+                if (stale.length) {
+                    await supabase.from('work_sessions').delete().in('session_date', stale);
+                }
+            }
+
+            if (rows.length) {
+                const { error } = await supabase.from('work_sessions').upsert(rows, { onConflict: 'session_date' });
+                if (error) {
+                    console.error('Failed bulk upsert to Supabase', error);
+                }
+            }
+        } catch (error) {
+            console.error('Failed bulk upsert to Supabase', error);
+        }
+    }
+}
+
+async function replaceLeavesCache(newLeaves) {
+    leavesCache = newLeaves.map(leave => ({
+        id: leave.id || generateId(),
+        type: leave.type,
+        date: leave.date,
+        notes: leave.notes || ''
+    }));
+    localStorage.setItem('leaves', JSON.stringify(leavesCache));
+    leavesLoaded = true;
+
+    if (supabase) {
+        try {
+            const { data: existing } = await supabase.from('leaves').select('id');
+            if (existing && Array.isArray(existing)) {
+                const keep = new Set(leavesCache.map(leave => leave.id));
+                const stale = existing.map(row => row.id).filter(id => !keep.has(id));
+                if (stale.length) {
+                    await supabase.from('leaves').delete().in('id', stale);
+                }
+            }
+
+            if (leavesCache.length) {
+                const rows = leavesCache.map(leave => ({
+                    id: leave.id,
+                    leave_type: leave.type,
+                    leave_date: leave.date,
+                    notes: leave.notes || ''
+                }));
+                const { error } = await supabase.from('leaves').upsert(rows, { onConflict: 'id' });
+                if (error) {
+                    console.error('Failed to sync leaves to Supabase', error);
+                }
+            }
+        } catch (error) {
+            console.error('Failed to sync leaves to Supabase', error);
+        }
+    }
+}
+
 // Initialize
-function init() {
-    loadState();
-    loadSettings();
+async function init() {
+    await loadState();
+    await loadSettings();
+    await ensureHistoryLoaded();
+    await ensureLeavesLoaded();
 
     const historyMonthInput = document.getElementById('historyMonth');
     if (historyMonthInput) {
         historyMonthInput.value = new Date().toISOString().slice(0, 7);
     }
 
+    await loadHistory();
+    await loadLeavesList();
     updateUI();
     startTimer();
     setupEventListeners();
-    loadHistory();
     requestNotificationPermission();
     setupReminders();
     
@@ -108,22 +307,22 @@ function updateTimer() {
 }
 
 // Check In/Out Functions
-function checkIn() {
+async function checkIn() {
     state.isCheckedIn = true;
     state.checkInTime = new Date().toISOString();
     state.totalBreakTime = 0;
     state.breaks = [];
     state.overtimeAlerted = false;
 
-    saveState();
+    await saveState();
     updateUI();
     setupReminders();
     showNotification('Checked in successfully!');
 }
 
-function checkOut() {
+async function checkOut() {
     if (state.isOnBreak) {
-        breakOut(); // Auto break-out if a break is running
+        await breakOut(); // Auto break-out if a break is running
     }
     
     const checkOutTime = new Date();
@@ -131,9 +330,6 @@ function checkOut() {
     const workedMs = checkOutTime - checkInTime - state.totalBreakTime;
     const workedHours = workedMs / 3600000;
     
-    // Save to history
-    const history = getHistory();
-    let importedCount = 0;
     const sessionDay = checkInTime.toDateString();
     const todayEntry = {
         date: sessionDay,
@@ -144,11 +340,10 @@ function checkOut() {
         totalWorked: workedMs,
         overtime: Math.max(0, workedHours - settings.overtimeThreshold) * 3600000
     };
+
+    await saveHistoryEntry(todayEntry);
+    historyLoaded = false;
     
-    history[sessionDay] = todayEntry;
-    localStorage.setItem('workHistory', JSON.stringify(history));
-    
-    // Reset state
     state = {
         isCheckedIn: false,
         isOnBreak: false,
@@ -159,25 +354,25 @@ function checkOut() {
         currentDate: new Date().toDateString()
     };
     
-    saveState();
+    await saveState();
     updateUI();
-    loadHistory();
+    await loadHistory();
     showNotification(`Checked out! Worked ${formatDuration(workedMs)}`);
 }
 
-function breakIn() {
+async function breakIn() {
     if (state.isOnBreak) return;
 
     state.isOnBreak = true;
     state.breakStartTime = new Date().toISOString();
 
-    saveState();
+    await saveState();
     updateUI();
     updateBreakTimer();
     showNotification('Break started');
 }
 
-function breakOut() {
+async function breakOut() {
     if (!state.isOnBreak || !state.breakStartTime) return;
 
     const breakEnd = new Date();
@@ -194,7 +389,7 @@ function breakOut() {
     state.isOnBreak = false;
     state.breakStartTime = null;
 
-    saveState();
+    await saveState();
     updateUI();
     updateBreaksList();
     updateBreakTimer();
@@ -410,7 +605,10 @@ function updateBreakTimer() {
 }
 
 // History Functions
-function loadHistory() {
+async function loadHistory() {
+    await ensureHistoryLoaded();
+    await ensureLeavesLoaded();
+
     const history = getHistory();
     const historyList = document.getElementById('historyList');
     const selectedMonth = document.getElementById('historyMonth').value;
@@ -433,6 +631,7 @@ function loadHistory() {
         const leaveDate = new Date(leave.date);
         if (leaveDate.getFullYear() === year && leaveDate.getMonth() === month - 1) {
             entries.push({
+                id: leave.id,
                 date: leave.date,
                 isLeave: true,
                 leaveType: leave.type,
@@ -462,7 +661,7 @@ function loadHistory() {
                         ${entry.leaveNotes ? ` - ${entry.leaveNotes}` : ''}
                     </div>
                 </div>
-                <button class="btn btn-secondary" onclick="deleteLeave('${entry.date}')" style="padding: 5px 10px;">Delete</button>
+                <button class="btn btn-secondary" onclick="deleteLeave('${entry.id}')" style="padding: 5px 10px;">Delete</button>
             `;
         } else {
             const overtime = entry.overtime || 0;
@@ -742,10 +941,33 @@ function updateAnalyticsStats() {
 }
 
 // Settings Functions
-function loadSettings() {
-    const saved = localStorage.getItem('workSettings');
-    if (saved) {
-        settings = { ...settings, ...JSON.parse(saved) };
+async function loadSettings() {
+    let loaded = null;
+
+    if (supabase) {
+        try {
+            const { data, error } = await supabase
+                .from('settings')
+                .select('payload')
+                .eq('id', 'singleton')
+                .maybeSingle();
+            if (!error && data && data.payload) {
+                loaded = data.payload;
+            }
+        } catch (error) {
+            console.error('Failed to load settings from Supabase', error);
+        }
+    }
+
+    if (!loaded) {
+        const saved = localStorage.getItem('workSettings');
+        if (saved) {
+            loaded = JSON.parse(saved);
+        }
+    }
+
+    if (loaded) {
+        settings = { ...settings, ...loaded };
     }
 
     settings.monthStartDay = clampDayValue(settings.monthStartDay || 1);
@@ -759,11 +981,12 @@ function loadSettings() {
     document.getElementById('overtimeAlert').checked = settings.overtimeAlert;
     document.getElementById('monthStartDay').value = settings.monthStartDay;
     document.getElementById('monthEndDay').value = settings.monthEndDay;
-    
-    loadLeavesList();
+
+    await persistSettings();
+    await loadLeavesList();
 }
 
-function saveSettings() {
+async function saveSettings() {
     settings.monthlyTarget = Number(document.getElementById('monthlyTargetSetting').value);
     settings.dailyHours = Number(document.getElementById('dailyHoursSetting').value);
     settings.overtimeThreshold = Number(document.getElementById('overtimeThreshold').value);
@@ -773,11 +996,10 @@ function saveSettings() {
     const endDayInput = Number(document.getElementById('monthEndDay').value);
     settings.monthStartDay = clampDayValue(startDayInput || settings.monthStartDay);
     settings.monthEndDay = clampDayValue(endDayInput || settings.monthEndDay);
-    settings.carryForwardMs = Number(settings.carryForwardMs) || 0;
     document.getElementById('monthStartDay').value = settings.monthStartDay;
     document.getElementById('monthEndDay').value = settings.monthEndDay;
 
-    localStorage.setItem('workSettings', JSON.stringify(settings));
+    await persistSettings();
     updateUI();
     setupReminders();
     showNotification('Settings saved!');
@@ -793,7 +1015,9 @@ function closeLeaveModal() {
     document.getElementById('leaveModal').classList.remove('active');
 }
 
-function saveLeave() {
+async function saveLeave() {
+    await ensureLeavesLoaded();
+
     const type = document.getElementById('leaveType').value;
     const date = document.getElementById('leaveDate').value;
     const notes = document.getElementById('leaveNotes').value;
@@ -802,34 +1026,77 @@ function saveLeave() {
         alert('Please select a date');
         return;
     }
-    
-    const leaves = getLeaves();
-    leaves.push({ type, date, notes });
-    localStorage.setItem('leaves', JSON.stringify(leaves));
-    
+
+    const leaveRecord = {
+        id: generateId(),
+        type,
+        date,
+        notes
+    };
+
+    leavesCache.push(leaveRecord);
+    localStorage.setItem('leaves', JSON.stringify(leavesCache));
+
+    if (supabase) {
+        try {
+            const { error } = await supabase.from('leaves').insert({
+                id: leaveRecord.id,
+                leave_type: leaveRecord.type,
+                leave_date: leaveRecord.date,
+                notes: leaveRecord.notes
+            });
+            if (error) {
+                console.error('Failed to save leave to Supabase', error);
+            }
+        } catch (error) {
+            console.error('Failed to save leave to Supabase', error);
+        }
+    }
+
     closeLeaveModal();
-    loadLeavesList();
-    loadHistory();
+    await loadLeavesList();
+    await loadHistory();
     showNotification('Leave marked successfully!');
 }
 
 function getLeaves() {
-    return JSON.parse(localStorage.getItem('leaves') || '[]');
+    if (!leavesLoaded) {
+        const local = localStorage.getItem('leaves');
+        leavesCache = local ? JSON.parse(local) : [];
+        leavesLoaded = true;
+    }
+    return leavesCache;
 }
 
-function deleteLeave(date) {
-    const leaves = getLeaves();
-    const filtered = leaves.filter(l => l.date !== date);
-    localStorage.setItem('leaves', JSON.stringify(filtered));
-    loadLeavesList();
-    loadHistory();
+async function deleteLeave(id) {
+    await ensureLeavesLoaded();
+
+    leavesCache = leavesCache.filter(l => l.id !== id);
+    localStorage.setItem('leaves', JSON.stringify(leavesCache));
+
+    if (supabase) {
+        try {
+            const { error } = await supabase.from('leaves').delete().eq('id', id);
+            if (error) {
+                console.error('Failed to delete leave from Supabase', error);
+            }
+        } catch (error) {
+            console.error('Failed to delete leave from Supabase', error);
+        }
+    }
+
+    await loadLeavesList();
+    await loadHistory();
     showNotification('Leave deleted');
 }
 
-function loadLeavesList() {
+async function loadLeavesList() {
+    await ensureLeavesLoaded();
     const leaves = getLeaves();
     const container = document.getElementById('leaveList');
     
+    if (!container) return;
+
     if (leaves.length === 0) {
         container.innerHTML = '<p style="color: var(--text-light);">No leaves marked</p>';
         return;
@@ -841,7 +1108,7 @@ function loadLeavesList() {
                 <strong>${formatDate(leave.date)}</strong><br>
                 <small>${leave.type} ${leave.notes ? `- ${leave.notes}` : ''}</small>
             </div>
-            <button class="btn btn-secondary" onclick="deleteLeave('${leave.date}')" style="padding: 5px 10px;">Delete</button>
+            <button class="btn btn-secondary" onclick="deleteLeave('${leave.id}')" style="padding: 5px 10px;">Delete</button>
         </div>
     `).join('');
 }
@@ -870,7 +1137,7 @@ function closeEditModal() {
     document.getElementById('editModal').classList.remove('active');
 }
 
-function saveEditEntry() {
+async function saveEditEntry() {
     const dateValue = document.getElementById('editDate').value;
     const checkInTime = document.getElementById('editCheckIn').value;
     const checkOutTime = document.getElementById('editCheckOut').value;
@@ -902,9 +1169,8 @@ function saveEditEntry() {
     }
     const overtime = Math.max(0, (totalWorked / 3600000) - settings.overtimeThreshold) * 3600000;
     
-    const history = getHistory();
     const historyKey = new Date(year, month - 1, day).toDateString();
-    history[historyKey] = {
+    await saveHistoryEntry({
         date: historyKey,
         checkIn: checkIn.toISOString(),
         checkOut: checkOut.toISOString(),
@@ -912,12 +1178,11 @@ function saveEditEntry() {
         totalBreak,
         totalWorked,
         overtime
-    };
-    
-    localStorage.setItem('workHistory', JSON.stringify(history));
-    
+    });
+    historyLoaded = false;
+
     closeEditModal();
-    loadHistory();
+    await loadHistory();
     updateUI();
     showNotification('Entry saved successfully!');
 }
@@ -927,7 +1192,8 @@ function editEntry(date) {
 }
 
 // Export Functions
-function exportCSV() {
+async function exportCSV() {
+    await ensureHistoryLoaded();
     const history = getHistory();
     const month = document.getElementById('historyMonth').value;
     const [year, monthNum] = month.split('-').map(Number);
@@ -949,7 +1215,8 @@ function exportCSV() {
     downloadFile(csv, `work-hours-${month}.csv`, 'text/csv');
 }
 
-function exportPDF() {
+async function exportPDF() {
+    await ensureHistoryLoaded();
     const history = getHistory();
     const month = document.getElementById('historyMonth').value;
     const [year, monthNum] = month.split('-').map(Number);
@@ -1016,7 +1283,10 @@ function exportPDF() {
     win.print();
 }
 
-function exportAllData() {
+async function exportAllData() {
+    await ensureHistoryLoaded();
+    await ensureLeavesLoaded();
+
     const data = {
         history: getHistory(),
         settings: settings,
@@ -1043,7 +1313,7 @@ function importData() {
     }
 }
 
-function promptCarryForwardHours() {
+async function promptCarryForwardHours() {
     const hoursInput = prompt('Enter the total hours you have already completed (e.g., 120.5):');
     if (hoursInput === null) {
         return;
@@ -1056,7 +1326,8 @@ function promptCarryForwardHours() {
     }
 
     settings.carryForwardMs = hours * 3600000;
-    localStorage.setItem('workSettings', JSON.stringify(settings));
+    await persistSettings();
+    await loadHistory();
     updateUI();
     showNotification(`Added ${hours.toFixed(1)}h as previous total hours.`);
 }
@@ -1086,28 +1357,41 @@ function openDataFilePicker() {
     input.click();
 }
 
-function importJsonText(text) {
+async function importJsonText(text) {
     try {
         const data = JSON.parse(text);
 
         if (data.history) {
-            localStorage.setItem('workHistory', JSON.stringify(data.history));
+            await replaceHistoryCache(data.history);
+            historyLoaded = true;
         }
         if (data.settings) {
-            localStorage.setItem('workSettings', JSON.stringify(data.settings));
+            settings = { ...settings, ...data.settings };
+            settings.monthStartDay = clampDayValue(settings.monthStartDay || 1);
+            settings.monthEndDay = clampDayValue(settings.monthEndDay || 31);
+            settings.carryForwardMs = Number(settings.carryForwardMs) || 0;
+            await persistSettings();
         }
         if (data.leaves) {
-            localStorage.setItem('leaves', JSON.stringify(data.leaves));
+            const normalized = data.leaves.map(leave => ({
+                id: leave.id || generateId(),
+                type: leave.type,
+                date: leave.date,
+                notes: leave.notes || ''
+            }));
+            await replaceLeavesCache(normalized);
         }
 
+        await loadHistory();
+        await loadLeavesList();
+        updateUI();
         showNotification('JSON data imported successfully!');
-        location.reload();
     } catch (error) {
         alert('Invalid JSON file.');
     }
 }
 
-function importCsvText(csvText) {
+async function importCsvText(csvText) {
     const rows = csvText.split(/\r?\n/).filter(line => line.trim().length > 0);
     if (!rows.length) {
         alert('CSV file is empty.');
@@ -1128,7 +1412,9 @@ function importCsvText(csvText) {
         return;
     }
 
+    await ensureHistoryLoaded();
     const history = getHistory();
+    let importedCount = 0;
 
     for (let i = 1; i < rows.length; i++) {
         const columns = splitCsvRow(rows[i]);
@@ -1198,9 +1484,11 @@ function importCsvText(csvText) {
         return;
     }
 
-    localStorage.setItem('workHistory', JSON.stringify(history));
+    await replaceHistoryCache(history);
+    historyLoaded = true;
+    await loadHistory();
+    updateUI();
     showNotification('CSV data imported successfully!');
-    location.reload();
 }
 
 function splitCsvRow(row) {
@@ -1291,6 +1579,13 @@ function formatDate(date) {
 function clampDayValue(day) {
     if (Number.isNaN(day)) return 1;
     return Math.min(31, Math.max(1, Math.round(day)));
+}
+
+function generateId() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    return `id-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
 function startOfDay(date) {
@@ -1410,35 +1705,85 @@ function setupReminders() {
 }
 
 // Storage Functions
-function saveState() {
-    localStorage.setItem('workState', JSON.stringify(state));
-}
+async function saveState() {
+    const snapshot = { ...state, currentDate: new Date().toDateString() };
+    localStorage.setItem('workState', JSON.stringify(snapshot));
 
-function loadState() {
-    const saved = localStorage.getItem('workState');
-    if (saved) {
-        const savedState = JSON.parse(saved);
-        
-        // Check if it's a new day
-        if (savedState.currentDate !== new Date().toDateString()) {
-            // Reset for new day
-            state = {
-                isCheckedIn: false,
-                isOnBreak: false,
-                checkInTime: null,
-                breakStartTime: null,
-                totalBreakTime: 0,
-                breaks: [],
-                currentDate: new Date().toDateString()
-            };
-        } else {
-            state = savedState;
+    if (supabase) {
+        const { error } = await supabase
+            .from('work_state')
+            .upsert({ id: 'singleton', payload: snapshot });
+        if (error) {
+            console.error('Failed to persist work state to Supabase', error);
         }
     }
 }
 
+async function loadState() {
+    let savedState = null;
+
+    if (supabase) {
+        try {
+            const { data, error } = await supabase
+                .from('work_state')
+                .select('payload')
+                .eq('id', 'singleton')
+                .maybeSingle();
+            if (!error && data && data.payload) {
+                savedState = data.payload;
+            }
+        } catch (error) {
+            console.error('Failed to load work state from Supabase', error);
+        }
+    }
+
+    if (!savedState) {
+        const local = localStorage.getItem('workState');
+        if (local) {
+            savedState = JSON.parse(local);
+        }
+    }
+
+    if (savedState && savedState.currentDate === new Date().toDateString()) {
+        state = { ...state, ...savedState };
+    } else {
+        state = {
+            isCheckedIn: false,
+            isOnBreak: false,
+            checkInTime: null,
+            breakStartTime: null,
+            totalBreakTime: 0,
+            breaks: [],
+            currentDate: new Date().toDateString()
+        };
+        await saveState();
+    }
+}
+
 function getHistory() {
-    return JSON.parse(localStorage.getItem('workHistory') || '{}');
+    if (!historyLoaded) {
+        const local = localStorage.getItem('workHistory');
+        historyCache = local ? JSON.parse(local) : {};
+        historyLoaded = true;
+    }
+    return historyCache;
+}
+
+async function persistSettings() {
+    localStorage.setItem('workSettings', JSON.stringify(settings));
+
+    if (supabase) {
+        try {
+            const { error } = await supabase
+                .from('settings')
+                .upsert({ id: 'singleton', payload: settings });
+            if (error) {
+                console.error('Failed to persist settings to Supabase', error);
+            }
+        } catch (error) {
+            console.error('Failed to persist settings to Supabase', error);
+        }
+    }
 }
 
 // Service Worker for PWA

@@ -16,7 +16,8 @@ let settings = {
     checkoutReminder: false,
     overtimeAlert: false,
     monthStartDay: 1,
-    monthEndDay: 31
+    monthEndDay: 31,
+    carryForwardMs: 0
 };
 
 let timerInterval;
@@ -131,6 +132,7 @@ function checkOut() {
     
     // Save to history
     const history = getHistory();
+    let importedCount = 0;
     const sessionDay = checkInTime.toDateString();
     const todayEntry = {
         date: sessionDay,
@@ -288,7 +290,7 @@ function updateMonthlyProgress() {
     const history = getHistory();
     const now = new Date();
     const { start: cycleStart, end: cycleEnd } = getCycleRange(now);
-    let monthlyTotal = 0;
+    let monthlyTotal = settings.carryForwardMs || 0;
 
     for (const [date, entry] of Object.entries(history)) {
         const entryDate = new Date(date);
@@ -672,6 +674,10 @@ function updateAnalyticsStats() {
         }
     }
 
+    if (settings.carryForwardMs) {
+        totalHours += settings.carryForwardMs;
+    }
+
     const avgDaily = totalDays > 0 ? totalHours / totalDays / 3600000 : 0;
     const avgBreak = totalDays > 0 ? totalBreaks / totalDays / 60000 : 0;
     
@@ -689,6 +695,7 @@ function loadSettings() {
 
     settings.monthStartDay = clampDayValue(settings.monthStartDay || 1);
     settings.monthEndDay = clampDayValue(settings.monthEndDay || 31);
+    settings.carryForwardMs = Number(settings.carryForwardMs) || 0;
     
     document.getElementById('monthlyTargetSetting').value = settings.monthlyTarget;
     document.getElementById('dailyHoursSetting').value = settings.dailyHours;
@@ -711,6 +718,7 @@ function saveSettings() {
     const endDayInput = Number(document.getElementById('monthEndDay').value);
     settings.monthStartDay = clampDayValue(startDayInput || settings.monthStartDay);
     settings.monthEndDay = clampDayValue(endDayInput || settings.monthEndDay);
+    settings.carryForwardMs = Number(settings.carryForwardMs) || 0;
     document.getElementById('monthStartDay').value = settings.monthStartDay;
     document.getElementById('monthEndDay').value = settings.monthEndDay;
 
@@ -965,38 +973,231 @@ function exportAllData() {
 }
 
 function importData() {
+    const choice = prompt('Choose an option:\n1. Add Previous Total Hours\n2. Upload a data file (CSV or JSON)');
+    if (choice === null) {
+        return;
+    }
+
+    const trimmed = choice.trim();
+    if (trimmed === '1') {
+        promptCarryForwardHours();
+    } else if (trimmed === '2') {
+        openDataFilePicker();
+    } else {
+        alert('Please choose 1 or 2 to continue.');
+    }
+}
+
+function promptCarryForwardHours() {
+    const hoursInput = prompt('Enter the total hours you have already completed (e.g., 120.5):');
+    if (hoursInput === null) {
+        return;
+    }
+
+    const hours = parseFloat(hoursInput.trim());
+    if (!Number.isFinite(hours) || hours < 0) {
+        alert('Please enter a valid non-negative number for hours.');
+        return;
+    }
+
+    settings.carryForwardMs = hours * 3600000;
+    localStorage.setItem('workSettings', JSON.stringify(settings));
+    updateUI();
+    showNotification(`Added ${hours.toFixed(1)}h as previous total hours.`);
+}
+
+function openDataFilePicker() {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.json';
-    
+    input.accept = '.json,.csv';
+
     input.onchange = e => {
-        const file = e.target.files[0];
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+
         const reader = new FileReader();
-        
         reader.onload = event => {
-            try {
-                const data = JSON.parse(event.target.result);
-                
-                if (data.history) {
-                    localStorage.setItem('workHistory', JSON.stringify(data.history));
-                }
-                if (data.settings) {
-                    localStorage.setItem('workSettings', JSON.stringify(data.settings));
-                }
-                if (data.leaves) {
-                    localStorage.setItem('leaves', JSON.stringify(data.leaves));
-                }
-                
-                location.reload();
-            } catch (error) {
-                alert('Invalid file format');
+            const text = event.target.result;
+            if (file.name.toLowerCase().endsWith('.csv') || file.type.includes('csv')) {
+                importCsvText(text);
+            } else {
+                importJsonText(text);
             }
         };
-        
+        reader.onerror = () => alert('Failed to read file.');
         reader.readAsText(file);
     };
-    
+
     input.click();
+}
+
+function importJsonText(text) {
+    try {
+        const data = JSON.parse(text);
+
+        if (data.history) {
+            localStorage.setItem('workHistory', JSON.stringify(data.history));
+        }
+        if (data.settings) {
+            localStorage.setItem('workSettings', JSON.stringify(data.settings));
+        }
+        if (data.leaves) {
+            localStorage.setItem('leaves', JSON.stringify(data.leaves));
+        }
+
+        showNotification('JSON data imported successfully!');
+        location.reload();
+    } catch (error) {
+        alert('Invalid JSON file.');
+    }
+}
+
+function importCsvText(csvText) {
+    const rows = csvText.split(/\r?\n/).filter(line => line.trim().length > 0);
+    if (!rows.length) {
+        alert('CSV file is empty.');
+        return;
+    }
+
+    const headers = splitCsvRow(rows[0]).map(header => header.toLowerCase());
+    const dateIdx = headers.indexOf('date');
+    const checkInIdx = headers.indexOf('checkin');
+    const checkOutIdx = headers.indexOf('checkout');
+    const breakMinutesIdx = headers.indexOf('breakminutes');
+    const breakHoursIdx = headers.indexOf('breakhours');
+    const totalWorkedIdx = headers.indexOf('totalworked');
+    const overtimeIdx = headers.indexOf('overtime');
+
+    if (dateIdx === -1 || checkInIdx === -1 || checkOutIdx === -1) {
+        alert('CSV must include headers: date, checkIn, checkOut (optionally breakMinutes, totalWorked, overtime).');
+        return;
+    }
+
+    const history = getHistory();
+
+    for (let i = 1; i < rows.length; i++) {
+        const columns = splitCsvRow(rows[i]);
+        if (!columns.length || !columns[dateIdx]) continue;
+
+        const baseDate = parseCsvDate(columns[dateIdx]);
+        if (Number.isNaN(baseDate.getTime())) {
+            console.warn('Skipping row with invalid date:', rows[i]);
+            continue;
+        }
+
+        const checkIn = combineDateTime(baseDate, columns[checkInIdx]);
+        const checkOut = combineDateTime(baseDate, columns[checkOutIdx]);
+        if (!checkIn || !checkOut) {
+            console.warn('Skipping row with invalid time:', rows[i]);
+            continue;
+        }
+        if (checkOut < checkIn) {
+            checkOut.setDate(checkOut.getDate() + 1);
+        }
+
+        let breakMinutes = 0;
+        if (breakMinutesIdx !== -1 && columns[breakMinutesIdx]) {
+            breakMinutes = parseFloat(columns[breakMinutesIdx]);
+        } else if (breakHoursIdx !== -1 && columns[breakHoursIdx]) {
+            breakMinutes = parseFloat(columns[breakHoursIdx]) * 60;
+        }
+        breakMinutes = Number.isFinite(breakMinutes) && breakMinutes > 0 ? breakMinutes : 0;
+        const totalBreak = breakMinutes * 60000;
+
+        let totalWorked = null;
+        if (totalWorkedIdx !== -1 && columns[totalWorkedIdx]) {
+            const workedHours = parseFloat(columns[totalWorkedIdx]);
+            if (Number.isFinite(workedHours)) {
+                totalWorked = Math.max(0, workedHours * 3600000);
+            }
+        }
+        if (totalWorked === null) {
+            totalWorked = Math.max(0, checkOut.getTime() - checkIn.getTime() - totalBreak);
+        }
+
+        let overtime = 0;
+        if (overtimeIdx !== -1 && columns[overtimeIdx]) {
+            const overtimeHours = parseFloat(columns[overtimeIdx]);
+            if (Number.isFinite(overtimeHours)) {
+                overtime = Math.max(0, overtimeHours * 3600000);
+            }
+        } else {
+            overtime = Math.max(0, (totalWorked / 3600000) - settings.overtimeThreshold) * 3600000;
+        }
+
+        const dateKey = new Date(baseDate.getFullYear(), baseDate.getMonth(), baseDate.getDate()).toDateString();
+        history[dateKey] = {
+            date: dateKey,
+            checkIn: checkIn.toISOString(),
+            checkOut: checkOut.toISOString(),
+            breaks: [],
+            totalBreak,
+            totalWorked,
+            overtime
+        };
+        importedCount++;
+    }
+
+    if (importedCount === 0) {
+        alert('No valid rows were found in the CSV.');
+        return;
+    }
+
+    localStorage.setItem('workHistory', JSON.stringify(history));
+    showNotification('CSV data imported successfully!');
+    location.reload();
+}
+
+function splitCsvRow(row) {
+    const values = [];
+    const regex = /(?:^|,)("(?:[^"]|"")*"|[^,]*)/g;
+    let match;
+    while ((match = regex.exec(row)) !== null) {
+        let value = match[1];
+        if (value.startsWith(',')) value = value.slice(1);
+        value = value.trim();
+        if (value.startsWith('"') && value.endsWith('"')) {
+            value = value.slice(1, -1).replace(/""/g, '"');
+        }
+        values.push(value);
+    }
+    return values;
+}
+
+function combineDateTime(baseDate, timeString) {
+    if (typeof timeString !== 'string' || !timeString.trim()) {
+        return null;
+    }
+
+    const timeParts = timeString.trim().split(':');
+    const hours = parseInt(timeParts[0], 10);
+    const minutes = parseInt(timeParts[1] || '0', 10);
+    if (!Number.isFinite(hours) || !Number.isFinite(minutes)) {
+        return null;
+    }
+
+    const dateTime = new Date(baseDate);
+    dateTime.setHours(hours, minutes, 0, 0);
+    return dateTime;
+}
+
+function parseCsvDate(raw) {
+    const trimmed = raw.trim();
+    if (!trimmed) return new Date(NaN);
+
+    let parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+    }
+
+    // Attempt to append the current year if missing
+    const currentYear = new Date().getFullYear();
+    parsed = new Date(`${trimmed} ${currentYear}`);
+    if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+    }
+
+    return new Date(NaN);
 }
 
 function clearData() {

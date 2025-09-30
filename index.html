@@ -1,1 +1,699 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1e40af">
+    <meta name="description" content="Track your working hours efficiently with check-in/out and break management">
+    <link rel="manifest" href="data:application/json,{%22name%22:%22Work%20Hours%20Tracker%22,%22short_name%22:%22Hours%20Tracker%22,%22start_url%22:%22/%22,%22display%22:%22standalone%22,%22background_color%22:%22%23ffffff%22,%22theme_color%22:%22%231e40af%22,%22orientation%22:%22portrait%22,%22icons%22:[{%22src%22:%22data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20192%20192'%3E%3Crect%20fill='%231e40af'%20width='192'%20height='192'%20rx='20'/%3E%3Ctext%20x='50%25'%20y='50%25'%20fill='white'%20font-size='100'%20text-anchor='middle'%20dominant-baseline='middle'%3E⏰%3C/text%3E%3C/svg%3E%22,%22sizes%22:%22192x192%22,%22type%22:%22image/svg+xml%22}]}">
+    <title>Work Hours Tracker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #1e40af;
+            --primary-dark: #1e3a8a;
+            --success: #16a34a;
+            --warning: #ea580c;
+            --danger: #dc2626;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --shadow: 0 1px 3px rgba(0,0,0,0.12);
+            --shadow-lg: 0 10px 25px rgba(0,0,0,0.15);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: var(--primary);
+            color: white;
+            padding: 15px 0;
+            box-shadow: var(--shadow);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            border-bottom: 2px solid var(--border);
+            overflow-x: auto;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            color: var(--text-light);
+            cursor: pointer;
+            font-size: 16px;
+            white-space: nowrap;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .status-card {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+
+        .status-card h2 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+
+        .timer {
+            font-size: 48px;
+            font-weight: bold;
+            font-variant-numeric: tabular-nums;
+            margin: 20px 0;
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-warning {
+            background: var(--warning);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: var(--border);
+            color: var(--text);
+        }
+
+        .progress-ring {
+            width: 200px;
+            height: 200px;
+            margin: 20px auto;
+        }
+
+        .progress-ring circle {
+            stroke-width: 10;
+            fill: none;
+            transition: stroke-dashoffset 0.5s;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: var(--bg);
+            border-radius: 8px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: var(--text-light);
+            margin-top: 5px;
+        }
+
+        .history-item {
+            padding: 15px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .history-item:last-child {
+            border-bottom: none;
+        }
+
+        .history-date {
+            font-weight: 500;
+        }
+
+        .history-hours {
+            color: var(--primary);
+            font-weight: bold;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 16px;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+        }
+
+        .break-list {
+            margin: 15px 0;
+        }
+
+        .break-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background: var(--bg);
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .notification {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            padding: 15px 20px;
+            background: var(--success);
+            color: white;
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            z-index: 1000;
+            animation: slideIn 0.3s;
+            max-width: 300px;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(400px); }
+            to { transform: translateX(0); }
+        }
+
+        .settings-section {
+            margin-bottom: 30px;
+        }
+
+        .settings-section h3 {
+            margin-bottom: 15px;
+            color: var(--primary);
+        }
+
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .switch {
+            position: relative;
+            width: 50px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--border);
+            transition: 0.4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 20px 0;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .timer {
+                font-size: 36px;
+            }
+            
+            .tabs {
+                gap: 5px;
+            }
+            
+            .tab {
+                padding: 8px 12px;
+                font-size: 14px;
+            }
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 25px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-light);
+        }
+
+        .overtime-badge {
+            background: var(--warning);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .leave-day {
+            background: #fef3c7;
+            border-left: 4px solid var(--warning);
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>⏰ Work Hours Tracker</h1>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="tabs">
+            <button class="tab active" data-tab="dashboard">Dashboard</button>
+            <button class="tab" data-tab="history">History</button>
+            <button class="tab" data-tab="analytics">Analytics</button>
+            <button class="tab" data-tab="settings">Settings</button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div class="tab-content active" id="dashboard">
+            <div class="card status-card">
+                <h2 id="currentStatus">Not Checked In</h2>
+                <div class="timer" id="timer">00:00:00</div>
+                <div id="currentDate"></div>
+            </div>
+
+            <div class="card">
+                <div class="action-buttons">
+                    <button class="btn btn-success" id="checkInBtn" onclick="checkIn()">
+                        🟢 Check In
+                    </button>
+                    <button class="btn btn-warning" id="breakOutBtn" onclick="breakOut()" disabled>
+                        ☕ Break Out
+                    </button>
+                    <button class="btn btn-primary" id="breakInBtn" onclick="breakIn()" disabled>
+                        ▶️ Break In
+                    </button>
+                    <button class="btn btn-danger" id="checkOutBtn" onclick="checkOut()" disabled>
+                        🔴 Check Out
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Today's Progress</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="todayHours">0h 0m</div>
+                        <div class="stat-label">Worked Today</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="todayBreaks">0h 0m</div>
+                        <div class="stat-label">Break Time</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="remainingToday">8h 0m</div>
+                        <div class="stat-label">Remaining Today</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="overtime">0h 0m</div>
+                        <div class="stat-label">Overtime</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Monthly Progress</h3>
+                <svg class="progress-ring" viewBox="0 0 200 200">
+                    <circle cx="100" cy="100" r="80" stroke="#e2e8f0" stroke-width="10"/>
+                    <circle id="progressCircle" cx="100" cy="100" r="80" stroke="#1e40af" stroke-width="10"
+                            stroke-dasharray="502" stroke-dashoffset="502" transform="rotate(-90 100 100)"/>
+                    <text x="100" y="90" text-anchor="middle" font-size="24" fill="#1e293b" id="progressText">0%</text>
+                    <text x="100" y="115" text-anchor="middle" font-size="14" fill="#64748b" id="progressHours">0 / 160 hrs</text>
+                </svg>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="monthlyWorked">0h</div>
+                        <div class="stat-label">This Month</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="monthlyTarget">160h</div>
+                        <div class="stat-label">Target</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="dailyRequired">8h</div>
+                        <div class="stat-label">Daily Required</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" id="breaksList" style="display: none;">
+                <h3>Today's Breaks</h3>
+                <div class="break-list" id="breaksContainer"></div>
+            </div>
+        </div>
+
+        <!-- History Tab -->
+        <div class="tab-content" id="history">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3>Work History</h3>
+                    <button class="btn btn-primary" onclick="openEditModal()">+ Add Entry</button>
+                </div>
+                <div class="form-group">
+                    <input type="month" id="historyMonth" onchange="loadHistory()">
+                </div>
+                <div id="historyList"></div>
+                <div class="export-buttons">
+                    <button class="btn btn-secondary" onclick="exportCSV()">📊 Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportPDF()">📄 Export PDF</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Tab -->
+        <div class="tab-content" id="analytics">
+            <div class="card">
+                <h3>Weekly Overview</h3>
+                <canvas id="weeklyChart"></canvas>
+                <div class="stats-grid" style="margin-top: 20px;">
+                    <div class="stat-item">
+                        <div class="stat-value" id="avgDaily">0h</div>
+                        <div class="stat-label">Avg Daily</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="avgBreak">0m</div>
+                        <div class="stat-label">Avg Break</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="totalOvertime">0h</div>
+                        <div class="stat-label">Total Overtime</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Monthly Pattern</h3>
+                <canvas id="monthlyChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div class="tab-content" id="settings">
+            <div class="card">
+                <div class="settings-section">
+                    <h3>Work Configuration</h3>
+                    <div class="form-group">
+                        <label>Monthly Target Hours</label>
+                        <input type="number" id="monthlyTargetSetting" value="160" onchange="saveSettings()">
+                    </div>
+                    <div class="form-group">
+                        <label>Daily Work Hours</label>
+                        <input type="number" id="dailyHoursSetting" value="8" step="0.5" onchange="saveSettings()">
+                    </div>
+                    <div class="form-group">
+                        <label>Overtime After (hours)</label>
+                        <input type="number" id="overtimeThreshold" value="8" step="0.5" onchange="saveSettings()">
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Notifications</h3>
+                    <div class="toggle-switch">
+                        <label class="switch">
+                            <input type="checkbox" id="checkoutReminder" onchange="saveSettings()">
+                            <span class="slider"></span>
+                        </label>
+                        <span>Check-out Reminder</span>
+                    </div>
+                    <div class="toggle-switch">
+                        <label class="switch">
+                            <input type="checkbox" id="overtimeAlert" onchange="saveSettings()">
+                            <span class="slider"></span>
+                        </label>
+                        <span>Overtime Alert</span>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Leave Management</h3>
+                    <button class="btn btn-primary" onclick="openLeaveModal()">Mark Leave/Holiday</button>
+                    <div id="leaveList" style="margin-top: 20px;"></div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Data Management</h3>
+                    <button class="btn btn-secondary" onclick="exportAllData()">📦 Export All Data</button>
+                    <button class="btn btn-warning" onclick="importData()">📥 Import Data</button>
+                    <button class="btn btn-danger" onclick="clearData()">🗑️ Clear All Data</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Entry Modal -->
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add/Edit Work Entry</h3>
+                <button class="modal-close" onclick="closeEditModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label>Date</label>
+                <input type="date" id="editDate">
+            </div>
+            <div class="form-group">
+                <label>Check In Time</label>
+                <input type="time" id="editCheckIn">
+            </div>
+            <div class="form-group">
+                <label>Check Out Time</label>
+                <input type="time" id="editCheckOut">
+            </div>
+            <div class="form-group">
+                <label>Break Duration (minutes)</label>
+                <input type="number" id="editBreak" value="0">
+            </div>
+            <button class="btn btn-primary" onclick="saveEditEntry()">Save Entry</button>
+        </div>
+    </div>
+
+    <!-- Leave Modal -->
+    <div class="modal" id="leaveModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Mark Leave/Holiday</h3>
+                <button class="modal-close" onclick="closeLeaveModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label>Leave Type</label>
+                <select id="leaveType">
+                    <option value="leave">Leave</option>
+                    <option value="holiday">Holiday</option>
+                    <option value="half-day">Half Day</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Date</label>
+                <input type="date" id="leaveDate">
+            </div>
+            <div class="form-group">
+                <label>Notes (optional)</label>
+                <input type="text" id="leaveNotes">
+            </div>
+            <button class="btn btn-primary" onclick="saveLeave()">Save</button>
+        </div>
+    </div>
+    <script src="app.js" defer></script>
+</body>
+</html>
 

@@ -1,0 +1,1764 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#1e40af">
+    <meta name="description" content="Track your working hours efficiently with check-in/out and break management">
+    <link rel="manifest" href="data:application/json,{%22name%22:%22Work%20Hours%20Tracker%22,%22short_name%22:%22Hours%20Tracker%22,%22start_url%22:%22/%22,%22display%22:%22standalone%22,%22background_color%22:%22%23ffffff%22,%22theme_color%22:%22%231e40af%22,%22orientation%22:%22portrait%22,%22icons%22:[{%22src%22:%22data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20192%20192'%3E%3Crect%20fill='%231e40af'%20width='192'%20height='192'%20rx='20'/%3E%3Ctext%20x='50%25'%20y='50%25'%20fill='white'%20font-size='100'%20text-anchor='middle'%20dominant-baseline='middle'%3E⏰%3C/text%3E%3C/svg%3E%22,%22sizes%22:%22192x192%22,%22type%22:%22image/svg+xml%22}]}">
+    <title>Work Hours Tracker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --primary: #1e40af;
+            --primary-dark: #1e3a8a;
+            --success: #16a34a;
+            --warning: #ea580c;
+            --danger: #dc2626;
+            --bg: #f8fafc;
+            --card: #ffffff;
+            --text: #1e293b;
+            --text-light: #64748b;
+            --border: #e2e8f0;
+            --shadow: 0 1px 3px rgba(0,0,0,0.12);
+            --shadow-lg: 0 10px 25px rgba(0,0,0,0.15);
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            line-height: 1.6;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        header {
+            background: var(--primary);
+            color: white;
+            padding: 15px 0;
+            box-shadow: var(--shadow);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+            border-bottom: 2px solid var(--border);
+            overflow-x: auto;
+        }
+
+        .tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            color: var(--text-light);
+            cursor: pointer;
+            font-size: 16px;
+            white-space: nowrap;
+            border-bottom: 2px solid transparent;
+            margin-bottom: -2px;
+            transition: all 0.3s;
+        }
+
+        .tab.active {
+            color: var(--primary);
+            border-bottom-color: var(--primary);
+        }
+
+        .tab-content {
+            display: none;
+            animation: fadeIn 0.3s;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .card {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow);
+        }
+
+        .status-card {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+            color: white;
+            padding: 25px;
+            text-align: center;
+        }
+
+        .status-card h2 {
+            font-size: 18px;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+
+        .timer {
+            font-size: 48px;
+            font-weight: bold;
+            font-variant-numeric: tabular-nums;
+            margin: 20px 0;
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+            margin: 20px 0;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            background: var(--primary-dark);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-lg);
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-warning {
+            background: var(--warning);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: var(--border);
+            color: var(--text);
+        }
+
+        .progress-ring {
+            width: 200px;
+            height: 200px;
+            margin: 20px auto;
+        }
+
+        .progress-ring circle {
+            stroke-width: 10;
+            fill: none;
+            transition: stroke-dashoffset 0.5s;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: var(--bg);
+            border-radius: 8px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--primary);
+        }
+
+        .stat-label {
+            font-size: 14px;
+            color: var(--text-light);
+            margin-top: 5px;
+        }
+
+        .history-item {
+            padding: 15px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .history-item:last-child {
+            border-bottom: none;
+        }
+
+        .history-date {
+            font-weight: 500;
+        }
+
+        .history-hours {
+            color: var(--primary);
+            font-weight: bold;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 16px;
+        }
+
+        .form-group input:focus, .form-group select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(30, 64, 175, 0.1);
+        }
+
+        .break-list {
+            margin: 15px 0;
+        }
+
+        .break-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px;
+            background: var(--bg);
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .notification {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            padding: 15px 20px;
+            background: var(--success);
+            color: white;
+            border-radius: 8px;
+            box-shadow: var(--shadow-lg);
+            z-index: 1000;
+            animation: slideIn 0.3s;
+            max-width: 300px;
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(400px); }
+            to { transform: translateX(0); }
+        }
+
+        .settings-section {
+            margin-bottom: 30px;
+        }
+
+        .settings-section h3 {
+            margin-bottom: 15px;
+            color: var(--primary);
+        }
+
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 10px 0;
+        }
+
+        .switch {
+            position: relative;
+            width: 50px;
+            height: 24px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--border);
+            transition: 0.4s;
+            border-radius: 24px;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: 0.4s;
+            border-radius: 50%;
+        }
+
+        input:checked + .slider {
+            background-color: var(--primary);
+        }
+
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 20px 0;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .timer {
+                font-size: 36px;
+            }
+            
+            .tabs {
+                gap: 5px;
+            }
+            
+            .tab {
+                padding: 8px 12px;
+                font-size: 14px;
+            }
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--card);
+            border-radius: 12px;
+            padding: 25px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: var(--text-light);
+        }
+
+        .overtime-badge {
+            background: var(--warning);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .leave-day {
+            background: #fef3c7;
+            border-left: 4px solid var(--warning);
+        }
+
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container">
+            <h1>⏰ Work Hours Tracker</h1>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="tabs">
+            <button class="tab active" data-tab="dashboard">Dashboard</button>
+            <button class="tab" data-tab="history">History</button>
+            <button class="tab" data-tab="analytics">Analytics</button>
+            <button class="tab" data-tab="settings">Settings</button>
+        </div>
+
+        <!-- Dashboard Tab -->
+        <div class="tab-content active" id="dashboard">
+            <div class="card status-card">
+                <h2 id="currentStatus">Not Checked In</h2>
+                <div class="timer" id="timer">00:00:00</div>
+                <div id="currentDate"></div>
+            </div>
+
+            <div class="card">
+                <div class="action-buttons">
+                    <button class="btn btn-success" id="checkInBtn" onclick="checkIn()">
+                        🟢 Check In
+                    </button>
+                    <button class="btn btn-warning" id="breakOutBtn" onclick="breakOut()" disabled>
+                        ☕ Break Out
+                    </button>
+                    <button class="btn btn-primary" id="breakInBtn" onclick="breakIn()" disabled>
+                        ▶️ Break In
+                    </button>
+                    <button class="btn btn-danger" id="checkOutBtn" onclick="checkOut()" disabled>
+                        🔴 Check Out
+                    </button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Today's Progress</h3>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="todayHours">0h 0m</div>
+                        <div class="stat-label">Worked Today</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="todayBreaks">0h 0m</div>
+                        <div class="stat-label">Break Time</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="remainingToday">8h 0m</div>
+                        <div class="stat-label">Remaining Today</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="overtime">0h 0m</div>
+                        <div class="stat-label">Overtime</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Monthly Progress</h3>
+                <svg class="progress-ring" viewBox="0 0 200 200">
+                    <circle cx="100" cy="100" r="80" stroke="#e2e8f0" stroke-width="10"/>
+                    <circle id="progressCircle" cx="100" cy="100" r="80" stroke="#1e40af" stroke-width="10"
+                            stroke-dasharray="502" stroke-dashoffset="502" transform="rotate(-90 100 100)"/>
+                    <text x="100" y="90" text-anchor="middle" font-size="24" fill="#1e293b" id="progressText">0%</text>
+                    <text x="100" y="115" text-anchor="middle" font-size="14" fill="#64748b" id="progressHours">0 / 160 hrs</text>
+                </svg>
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-value" id="monthlyWorked">0h</div>
+                        <div class="stat-label">This Month</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="monthlyTarget">160h</div>
+                        <div class="stat-label">Target</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="dailyRequired">8h</div>
+                        <div class="stat-label">Daily Required</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" id="breaksList" style="display: none;">
+                <h3>Today's Breaks</h3>
+                <div class="break-list" id="breaksContainer"></div>
+            </div>
+        </div>
+
+        <!-- History Tab -->
+        <div class="tab-content" id="history">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3>Work History</h3>
+                    <button class="btn btn-primary" onclick="openEditModal()">+ Add Entry</button>
+                </div>
+                <div class="form-group">
+                    <input type="month" id="historyMonth" onchange="loadHistory()">
+                </div>
+                <div id="historyList"></div>
+                <div class="export-buttons">
+                    <button class="btn btn-secondary" onclick="exportCSV()">📊 Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportPDF()">📄 Export PDF</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Tab -->
+        <div class="tab-content" id="analytics">
+            <div class="card">
+                <h3>Weekly Overview</h3>
+                <canvas id="weeklyChart"></canvas>
+                <div class="stats-grid" style="margin-top: 20px;">
+                    <div class="stat-item">
+                        <div class="stat-value" id="avgDaily">0h</div>
+                        <div class="stat-label">Avg Daily</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="avgBreak">0m</div>
+                        <div class="stat-label">Avg Break</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="totalOvertime">0h</div>
+                        <div class="stat-label">Total Overtime</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>Monthly Pattern</h3>
+                <canvas id="monthlyChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div class="tab-content" id="settings">
+            <div class="card">
+                <div class="settings-section">
+                    <h3>Work Configuration</h3>
+                    <div class="form-group">
+                        <label>Monthly Target Hours</label>
+                        <input type="number" id="monthlyTargetSetting" value="160" onchange="saveSettings()">
+                    </div>
+                    <div class="form-group">
+                        <label>Daily Work Hours</label>
+                        <input type="number" id="dailyHoursSetting" value="8" step="0.5" onchange="saveSettings()">
+                    </div>
+                    <div class="form-group">
+                        <label>Overtime After (hours)</label>
+                        <input type="number" id="overtimeThreshold" value="8" step="0.5" onchange="saveSettings()">
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Notifications</h3>
+                    <div class="toggle-switch">
+                        <label class="switch">
+                            <input type="checkbox" id="breakReminder" onchange="saveSettings()">
+                            <span class="slider"></span>
+                        </label>
+                        <span>Break Reminder (every 2 hours)</span>
+                    </div>
+                    <div class="toggle-switch">
+                        <label class="switch">
+                            <input type="checkbox" id="checkoutReminder" onchange="saveSettings()">
+                            <span class="slider"></span>
+                        </label>
+                        <span>Check-out Reminder</span>
+                    </div>
+                    <div class="toggle-switch">
+                        <label class="switch">
+                            <input type="checkbox" id="overtimeAlert" onchange="saveSettings()">
+                            <span class="slider"></span>
+                        </label>
+                        <span>Overtime Alert</span>
+                    </div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Leave Management</h3>
+                    <button class="btn btn-primary" onclick="openLeaveModal()">Mark Leave/Holiday</button>
+                    <div id="leaveList" style="margin-top: 20px;"></div>
+                </div>
+
+                <div class="settings-section">
+                    <h3>Data Management</h3>
+                    <button class="btn btn-secondary" onclick="exportAllData()">📦 Export All Data</button>
+                    <button class="btn btn-warning" onclick="importData()">📥 Import Data</button>
+                    <button class="btn btn-danger" onclick="clearData()">🗑️ Clear All Data</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Entry Modal -->
+    <div class="modal" id="editModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Add/Edit Work Entry</h3>
+                <button class="modal-close" onclick="closeEditModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label>Date</label>
+                <input type="date" id="editDate">
+            </div>
+            <div class="form-group">
+                <label>Check In Time</label>
+                <input type="time" id="editCheckIn">
+            </div>
+            <div class="form-group">
+                <label>Check Out Time</label>
+                <input type="time" id="editCheckOut">
+            </div>
+            <div class="form-group">
+                <label>Break Duration (minutes)</label>
+                <input type="number" id="editBreak" value="0">
+            </div>
+            <button class="btn btn-primary" onclick="saveEditEntry()">Save Entry</button>
+        </div>
+    </div>
+
+    <!-- Leave Modal -->
+    <div class="modal" id="leaveModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Mark Leave/Holiday</h3>
+                <button class="modal-close" onclick="closeLeaveModal()">×</button>
+            </div>
+            <div class="form-group">
+                <label>Leave Type</label>
+                <select id="leaveType">
+                    <option value="leave">Leave</option>
+                    <option value="holiday">Holiday</option>
+                    <option value="half-day">Half Day</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Date</label>
+                <input type="date" id="leaveDate">
+            </div>
+            <div class="form-group">
+                <label>Notes (optional)</label>
+                <input type="text" id="leaveNotes">
+            </div>
+            <button class="btn btn-primary" onclick="saveLeave()">Save</button>
+        </div>
+    </div>
+
+    <script>
+        // State Management
+        let state = {
+            isCheckedIn: false,
+            isOnBreak: false,
+            checkInTime: null,
+            breakStartTime: null,
+            totalBreakTime: 0,
+            breaks: [],
+            currentDate: new Date().toDateString()
+        };
+
+        let settings = {
+            monthlyTarget: 160,
+            dailyHours: 8,
+            overtimeThreshold: 8,
+            breakReminder: false,
+            checkoutReminder: false,
+            overtimeAlert: false
+        };
+
+        let timerInterval;
+        let reminderIntervals = {};
+
+        // Initialize
+        function init() {
+            loadState();
+            loadSettings();
+            updateUI();
+            startTimer();
+            setupEventListeners();
+            loadHistory();
+            updateAnalytics();
+            requestNotificationPermission();
+            setupReminders();
+            
+            // Set current date
+            document.getElementById('currentDate').textContent = new Date().toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+            
+            // Set current month in history filter
+            document.getElementById('historyMonth').value = new Date().toISOString().slice(0, 7);
+        }
+
+        // Event Listeners
+        function setupEventListeners() {
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+            });
+        }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            document.querySelector(`[data-tab="${tabName}"]`).classList.add('active');
+            document.getElementById(tabName).classList.add('active');
+            
+            if (tabName === 'analytics') {
+                updateAnalytics();
+            }
+        }
+
+        // Timer Functions
+        function startTimer() {
+            if (timerInterval) clearInterval(timerInterval);
+            
+            timerInterval = setInterval(() => {
+                if (state.isCheckedIn) {
+                    updateTimer();
+                    updateTodayStats();
+                }
+            }, 1000);
+        }
+
+        function updateTimer() {
+            if (!state.checkInTime) return;
+            
+            const now = new Date();
+            const checkIn = new Date(state.checkInTime);
+            let elapsed = now - checkIn;
+            
+            // Subtract break time
+            if (state.isOnBreak && state.breakStartTime) {
+                const currentBreak = now - new Date(state.breakStartTime);
+                elapsed -= (state.totalBreakTime + currentBreak);
+            } else {
+                elapsed -= state.totalBreakTime;
+            }
+            
+            const hours = Math.floor(elapsed / 3600000);
+            const minutes = Math.floor((elapsed % 3600000) / 60000);
+            const seconds = Math.floor((elapsed % 60000) / 1000);
+            
+            document.getElementById('timer').textContent = 
+                `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        // Check In/Out Functions
+        function checkIn() {
+            state.isCheckedIn = true;
+            state.checkInTime = new Date().toISOString();
+            state.totalBreakTime = 0;
+            state.breaks = [];
+            
+            saveState();
+            updateUI();
+            showNotification('Checked in successfully!');
+        }
+
+        function checkOut() {
+            if (state.isOnBreak) {
+                breakIn(); // Auto break-in if on break
+            }
+            
+            const checkOutTime = new Date();
+            const checkInTime = new Date(state.checkInTime);
+            const workedMs = checkOutTime - checkInTime - state.totalBreakTime;
+            const workedHours = workedMs / 3600000;
+            
+            // Save to history
+            const history = getHistory();
+            const today = new Date().toDateString();
+            const todayEntry = {
+                date: today,
+                checkIn: state.checkInTime,
+                checkOut: checkOutTime.toISOString(),
+                breaks: state.breaks,
+                totalBreak: state.totalBreakTime,
+                totalWorked: workedMs,
+                overtime: Math.max(0, workedHours - settings.overtimeThreshold) * 3600000
+            };
+            
+            history[today] = todayEntry;
+            localStorage.setItem('workHistory', JSON.stringify(history));
+            
+            // Reset state
+            state = {
+                isCheckedIn: false,
+                isOnBreak: false,
+                checkInTime: null,
+                breakStartTime: null,
+                totalBreakTime: 0,
+                breaks: [],
+                currentDate: new Date().toDateString()
+            };
+            
+            saveState();
+            updateUI();
+            loadHistory();
+            showNotification(`Checked out! Worked ${formatDuration(workedMs)}`);
+        }
+
+        function breakOut() {
+            state.isOnBreak = true;
+            state.breakStartTime = new Date().toISOString();
+            
+            saveState();
+            updateUI();
+            showNotification('Break started');
+        }
+
+        function breakIn() {
+            if (!state.isOnBreak || !state.breakStartTime) return;
+            
+            const breakEnd = new Date();
+            const breakStart = new Date(state.breakStartTime);
+            const breakDuration = breakEnd - breakStart;
+            
+            state.breaks.push({
+                start: state.breakStartTime,
+                end: breakEnd.toISOString(),
+                duration: breakDuration
+            });
+            
+            state.totalBreakTime += breakDuration;
+            state.isOnBreak = false;
+            state.breakStartTime = null;
+            
+            saveState();
+            updateUI();
+            updateBreaksList();
+            showNotification(`Break ended (${formatDuration(breakDuration)})`);
+        }
+
+        // UI Update Functions
+        function updateUI() {
+            const checkInBtn = document.getElementById('checkInBtn');
+            const checkOutBtn = document.getElementById('checkOutBtn');
+            const breakOutBtn = document.getElementById('breakOutBtn');
+            const breakInBtn = document.getElementById('breakInBtn');
+            const currentStatus = document.getElementById('currentStatus');
+            
+            if (state.isCheckedIn) {
+                checkInBtn.disabled = true;
+                checkOutBtn.disabled = false;
+                
+                if (state.isOnBreak) {
+                    breakOutBtn.disabled = true;
+                    breakInBtn.disabled = false;
+                    currentStatus.textContent = 'On Break';
+                    currentStatus.style.color = '#ea580c';
+                } else {
+                    breakOutBtn.disabled = false;
+                    breakInBtn.disabled = true;
+                    currentStatus.textContent = 'Working';
+                    currentStatus.style.color = '#16a34a';
+                }
+            } else {
+                checkInBtn.disabled = false;
+                checkOutBtn.disabled = true;
+                breakOutBtn.disabled = true;
+                breakInBtn.disabled = true;
+                currentStatus.textContent = 'Not Checked In';
+                currentStatus.style.color = '#ffffff';
+                document.getElementById('timer').textContent = '00:00:00';
+            }
+            
+            updateTodayStats();
+            updateMonthlyProgress();
+            updateBreaksList();
+        }
+
+        function updateTodayStats() {
+            const history = getHistory();
+            const today = new Date().toDateString();
+            let todayWorked = 0;
+            let todayBreaks = 0;
+            let overtime = 0;
+            
+            if (history[today]) {
+                todayWorked = history[today].totalWorked;
+                todayBreaks = history[today].totalBreak;
+                overtime = history[today].overtime || 0;
+            }
+            
+            // Add current session if checked in
+            if (state.isCheckedIn && state.checkInTime) {
+                const now = new Date();
+                const checkIn = new Date(state.checkInTime);
+                let currentSession = now - checkIn - state.totalBreakTime;
+                
+                if (state.isOnBreak && state.breakStartTime) {
+                    const currentBreak = now - new Date(state.breakStartTime);
+                    currentSession -= currentBreak;
+                    todayBreaks += state.totalBreakTime + currentBreak;
+                } else {
+                    todayBreaks += state.totalBreakTime;
+                }
+                
+                todayWorked += currentSession;
+                overtime = Math.max(0, (todayWorked / 3600000) - settings.overtimeThreshold) * 3600000;
+            }
+            
+            const remaining = Math.max(0, settings.dailyHours * 3600000 - todayWorked);
+            
+            document.getElementById('todayHours').textContent = formatDuration(todayWorked);
+            document.getElementById('todayBreaks').textContent = formatDuration(todayBreaks);
+            document.getElementById('remainingToday').textContent = formatDuration(remaining);
+            document.getElementById('overtime').textContent = formatDuration(overtime);
+            
+            // Check for overtime alert
+            if (settings.overtimeAlert && overtime > 0 && !state.overtimeAlerted) {
+                showNotification('You are now in overtime!', 'warning');
+                state.overtimeAlerted = true;
+            }
+        }
+
+        function updateMonthlyProgress() {
+            const history = getHistory();
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
+            let monthlyTotal = 0;
+            
+            for (const [date, entry] of Object.entries(history)) {
+                const entryDate = new Date(date);
+                if (entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear) {
+                    monthlyTotal += entry.totalWorked;
+                }
+            }
+            
+            // Add current session
+            if (state.isCheckedIn && state.checkInTime) {
+                const now = new Date();
+                const checkIn = new Date(state.checkInTime);
+                let currentSession = now - checkIn - state.totalBreakTime;
+                
+                if (state.isOnBreak && state.breakStartTime) {
+                    const currentBreak = now - new Date(state.breakStartTime);
+                    currentSession -= currentBreak;
+                }
+                
+                monthlyTotal += currentSession;
+            }
+            
+            const monthlyHours = monthlyTotal / 3600000;
+            const targetHours = settings.monthlyTarget;
+            const percentage = Math.min(100, (monthlyHours / targetHours) * 100);
+            
+            // Update progress ring
+            const circumference = 2 * Math.PI * 80;
+            const offset = circumference - (percentage / 100) * circumference;
+            
+            const progressCircle = document.getElementById('progressCircle');
+            progressCircle.style.strokeDashoffset = offset;
+            
+            document.getElementById('progressText').textContent = `${Math.round(percentage)}%`;
+            document.getElementById('progressHours').textContent = 
+                `${monthlyHours.toFixed(1)} / ${targetHours} hrs`;
+            
+            document.getElementById('monthlyWorked').textContent = `${monthlyHours.toFixed(1)}h`;
+            document.getElementById('monthlyTarget').textContent = `${targetHours}h`;
+            
+            // Calculate required daily hours for remaining days
+            const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+            const daysPassed = now.getDate();
+            const remainingDays = daysInMonth - daysPassed;
+            const remainingHours = Math.max(0, targetHours - monthlyHours);
+            const dailyRequired = remainingDays > 0 ? (remainingHours / remainingDays).toFixed(1) : 0;
+            
+            document.getElementById('dailyRequired').textContent = `${dailyRequired}h`;
+        }
+
+        function updateBreaksList() {
+            const container = document.getElementById('breaksContainer');
+            const breaksList = document.getElementById('breaksList');
+            
+            if (state.breaks.length === 0 && !state.isOnBreak) {
+                breaksList.style.display = 'none';
+                return;
+            }
+            
+            breaksList.style.display = 'block';
+            container.innerHTML = '';
+            
+            state.breaks.forEach((brk, index) => {
+                const breakItem = document.createElement('div');
+                breakItem.className = 'break-item';
+                breakItem.innerHTML = `
+                    <span>Break ${index + 1}</span>
+                    <span>${formatDuration(brk.duration)}</span>
+                `;
+                container.appendChild(breakItem);
+            });
+            
+            if (state.isOnBreak && state.breakStartTime) {
+                const breakItem = document.createElement('div');
+                breakItem.className = 'break-item';
+                breakItem.style.background = '#fef3c7';
+                breakItem.innerHTML = `
+                    <span>Current Break</span>
+                    <span>Ongoing...</span>
+                `;
+                container.appendChild(breakItem);
+            }
+        }
+
+        // History Functions
+        function loadHistory() {
+            const history = getHistory();
+            const historyList = document.getElementById('historyList');
+            const selectedMonth = document.getElementById('historyMonth').value;
+            
+            historyList.innerHTML = '';
+            
+            const [year, month] = selectedMonth.split('-').map(Number);
+            const entries = [];
+            
+            for (const [date, entry] of Object.entries(history)) {
+                const entryDate = new Date(date);
+                if (entryDate.getFullYear() === year && entryDate.getMonth() === month - 1) {
+                    entries.push({ date, ...entry });
+                }
+            }
+            
+            // Check for leaves
+            const leaves = getLeaves();
+            for (const leave of leaves) {
+                const leaveDate = new Date(leave.date);
+                if (leaveDate.getFullYear() === year && leaveDate.getMonth() === month - 1) {
+                    entries.push({
+                        date: leave.date,
+                        isLeave: true,
+                        leaveType: leave.type,
+                        leaveNotes: leave.notes
+                    });
+                }
+            }
+            
+            entries.sort((a, b) => new Date(b.date) - new Date(a.date));
+            
+            if (entries.length === 0) {
+                historyList.innerHTML = '<div class="history-item">No entries for this month</div>';
+                return;
+            }
+            
+            entries.forEach(entry => {
+                const item = document.createElement('div');
+                item.className = 'history-item';
+                
+                if (entry.isLeave) {
+                    item.classList.add('leave-day');
+                    item.innerHTML = `
+                        <div>
+                            <div class="history-date">${formatDate(entry.date)}</div>
+                            <div style="font-size: 14px; color: var(--text-light);">
+                                ${entry.leaveType.charAt(0).toUpperCase() + entry.leaveType.slice(1)}
+                                ${entry.leaveNotes ? ` - ${entry.leaveNotes}` : ''}
+                            </div>
+                        </div>
+                        <button class="btn btn-secondary" onclick="deleteLeave('${entry.date}')" style="padding: 5px 10px;">Delete</button>
+                    `;
+                } else {
+                    const overtime = entry.overtime || 0;
+                    item.innerHTML = `
+                        <div>
+                            <div class="history-date">${formatDate(entry.date)}</div>
+                            <div style="font-size: 14px; color: var(--text-light);">
+                                ${new Date(entry.checkIn).toLocaleTimeString()} - 
+                                ${new Date(entry.checkOut).toLocaleTimeString()}
+                                ${overtime > 0 ? '<span class="overtime-badge">OT</span>' : ''}
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <span class="history-hours">${formatDuration(entry.totalWorked)}</span>
+                            <button class="btn btn-secondary" onclick="editEntry('${entry.date}')" style="padding: 5px 10px;">Edit</button>
+                        </div>
+                    `;
+                }
+                
+                historyList.appendChild(item);
+            });
+        }
+
+        // Analytics Functions
+        function updateAnalytics() {
+            updateWeeklyChart();
+            updateMonthlyChart();
+            updateAnalyticsStats();
+        }
+
+        function updateWeeklyChart() {
+            const canvas = document.getElementById('weeklyChart');
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            const history = getHistory();
+            
+            // Get last 7 days
+            const days = [];
+            const hours = [];
+            
+            for (let i = 6; i >= 0; i--) {
+                const date = new Date();
+                date.setDate(date.getDate() - i);
+                const dateStr = date.toDateString();
+                
+                days.push(date.toLocaleDateString('en-US', { weekday: 'short' }));
+                
+                if (history[dateStr]) {
+                    hours.push((history[dateStr].totalWorked / 3600000).toFixed(1));
+                } else {
+                    hours.push(0);
+                }
+            }
+            
+            // Simple bar chart
+            drawBarChart(ctx, days, hours, 'Hours Worked');
+        }
+
+        function updateMonthlyChart() {
+            const canvas = document.getElementById('monthlyChart');
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            const history = getHistory();
+            
+            const now = new Date();
+            const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+            const days = [];
+            const hours = [];
+            
+            for (let i = 1; i <= daysInMonth; i++) {
+                const date = new Date(now.getFullYear(), now.getMonth(), i);
+                const dateStr = date.toDateString();
+                
+                days.push(i);
+                
+                if (history[dateStr]) {
+                    hours.push((history[dateStr].totalWorked / 3600000).toFixed(1));
+                } else {
+                    hours.push(0);
+                }
+            }
+            
+            drawLineChart(ctx, days, hours, 'Daily Hours This Month');
+        }
+
+        function drawBarChart(ctx, labels, data, title) {
+            const canvas = ctx.canvas;
+            const width = canvas.width = canvas.offsetWidth * 2;
+            const height = canvas.height = 400;
+            
+            ctx.clearRect(0, 0, width, height);
+            ctx.scale(2, 2);
+            
+            const padding = 40;
+            const barWidth = (canvas.offsetWidth - padding * 2) / labels.length * 0.6;
+            const maxValue = Math.max(...data.map(Number), 10);
+            const scale = (200 - padding) / maxValue;
+            
+            // Draw bars
+            ctx.fillStyle = '#1e40af';
+            labels.forEach((label, i) => {
+                const x = padding + (i * (canvas.offsetWidth - padding * 2) / labels.length) + 20;
+                const barHeight = data[i] * scale;
+                const y = 200 - barHeight - padding;
+                
+                ctx.fillRect(x, y, barWidth, barHeight);
+                
+                // Draw value
+                ctx.fillStyle = '#1e293b';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(data[i], x + barWidth / 2, y - 5);
+                
+                // Draw label
+                ctx.fillText(label, x + barWidth / 2, 200 - padding + 20);
+                
+                ctx.fillStyle = '#1e40af';
+            });
+        }
+
+        function drawLineChart(ctx, labels, data, title) {
+            const canvas = ctx.canvas;
+            const width = canvas.width = canvas.offsetWidth * 2;
+            const height = canvas.height = 400;
+            
+            ctx.clearRect(0, 0, width, height);
+            ctx.scale(2, 2);
+            
+            const padding = 40;
+            const maxValue = Math.max(...data.map(Number), 10);
+            const scale = (200 - padding) / maxValue;
+            
+            // Draw line
+            ctx.strokeStyle = '#1e40af';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            labels.forEach((label, i) => {
+                const x = padding + (i * (canvas.offsetWidth - padding * 2) / (labels.length - 1));
+                const y = 200 - (data[i] * scale) - padding;
+                
+                if (i === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            });
+            
+            ctx.stroke();
+            
+            // Draw points
+            ctx.fillStyle = '#1e40af';
+            labels.forEach((label, i) => {
+                const x = padding + (i * (canvas.offsetWidth - padding * 2) / (labels.length - 1));
+                const y = 200 - (data[i] * scale) - padding;
+                
+                ctx.beginPath();
+                ctx.arc(x, y, 3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+
+        function updateAnalyticsStats() {
+            const history = getHistory();
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
+            
+            let totalDays = 0;
+            let totalHours = 0;
+            let totalBreaks = 0;
+            let totalOvertime = 0;
+            
+            for (const [date, entry] of Object.entries(history)) {
+                const entryDate = new Date(date);
+                if (entryDate.getMonth() === currentMonth && entryDate.getFullYear() === currentYear) {
+                    totalDays++;
+                    totalHours += entry.totalWorked;
+                    totalBreaks += entry.totalBreak;
+                    totalOvertime += entry.overtime || 0;
+                }
+            }
+            
+            const avgDaily = totalDays > 0 ? totalHours / totalDays / 3600000 : 0;
+            const avgBreak = totalDays > 0 ? totalBreaks / totalDays / 60000 : 0;
+            
+            document.getElementById('avgDaily').textContent = `${avgDaily.toFixed(1)}h`;
+            document.getElementById('avgBreak').textContent = `${Math.round(avgBreak)}m`;
+            document.getElementById('totalOvertime').textContent = `${(totalOvertime / 3600000).toFixed(1)}h`;
+        }
+
+        // Settings Functions
+        function loadSettings() {
+            const saved = localStorage.getItem('workSettings');
+            if (saved) {
+                settings = { ...settings, ...JSON.parse(saved) };
+            }
+            
+            document.getElementById('monthlyTargetSetting').value = settings.monthlyTarget;
+            document.getElementById('dailyHoursSetting').value = settings.dailyHours;
+            document.getElementById('overtimeThreshold').value = settings.overtimeThreshold;
+            document.getElementById('breakReminder').checked = settings.breakReminder;
+            document.getElementById('checkoutReminder').checked = settings.checkoutReminder;
+            document.getElementById('overtimeAlert').checked = settings.overtimeAlert;
+            
+            loadLeavesList();
+        }
+
+        function saveSettings() {
+            settings.monthlyTarget = Number(document.getElementById('monthlyTargetSetting').value);
+            settings.dailyHours = Number(document.getElementById('dailyHoursSetting').value);
+            settings.overtimeThreshold = Number(document.getElementById('overtimeThreshold').value);
+            settings.breakReminder = document.getElementById('breakReminder').checked;
+            settings.checkoutReminder = document.getElementById('checkoutReminder').checked;
+            settings.overtimeAlert = document.getElementById('overtimeAlert').checked;
+            
+            localStorage.setItem('workSettings', JSON.stringify(settings));
+            updateUI();
+            setupReminders();
+            showNotification('Settings saved!');
+        }
+
+        // Leave Management
+        function openLeaveModal() {
+            document.getElementById('leaveModal').classList.add('active');
+            document.getElementById('leaveDate').value = new Date().toISOString().split('T')[0];
+        }
+
+        function closeLeaveModal() {
+            document.getElementById('leaveModal').classList.remove('active');
+        }
+
+        function saveLeave() {
+            const type = document.getElementById('leaveType').value;
+            const date = document.getElementById('leaveDate').value;
+            const notes = document.getElementById('leaveNotes').value;
+            
+            if (!date) {
+                alert('Please select a date');
+                return;
+            }
+            
+            const leaves = getLeaves();
+            leaves.push({ type, date, notes });
+            localStorage.setItem('leaves', JSON.stringify(leaves));
+            
+            closeLeaveModal();
+            loadLeavesList();
+            loadHistory();
+            showNotification('Leave marked successfully!');
+        }
+
+        function getLeaves() {
+            return JSON.parse(localStorage.getItem('leaves') || '[]');
+        }
+
+        function deleteLeave(date) {
+            const leaves = getLeaves();
+            const filtered = leaves.filter(l => l.date !== date);
+            localStorage.setItem('leaves', JSON.stringify(filtered));
+            loadLeavesList();
+            loadHistory();
+            showNotification('Leave deleted');
+        }
+
+        function loadLeavesList() {
+            const leaves = getLeaves();
+            const container = document.getElementById('leaveList');
+            
+            if (leaves.length === 0) {
+                container.innerHTML = '<p style="color: var(--text-light);">No leaves marked</p>';
+                return;
+            }
+            
+            container.innerHTML = leaves.map(leave => `
+                <div class="break-item">
+                    <div>
+                        <strong>${formatDate(leave.date)}</strong><br>
+                        <small>${leave.type} ${leave.notes ? `- ${leave.notes}` : ''}</small>
+                    </div>
+                    <button class="btn btn-secondary" onclick="deleteLeave('${leave.date}')" style="padding: 5px 10px;">Delete</button>
+                </div>
+            `).join('');
+        }
+
+        // Modal Functions
+        function openEditModal(date = null) {
+            document.getElementById('editModal').classList.add('active');
+            
+            if (date) {
+                const history = getHistory();
+                const entry = history[date];
+                
+                document.getElementById('editDate').value = new Date(date).toISOString().split('T')[0];
+                document.getElementById('editCheckIn').value = new Date(entry.checkIn).toTimeString().slice(0, 5);
+                document.getElementById('editCheckOut').value = new Date(entry.checkOut).toTimeString().slice(0, 5);
+                document.getElementById('editBreak').value = Math.round(entry.totalBreak / 60000);
+            } else {
+                document.getElementById('editDate').value = new Date().toISOString().split('T')[0];
+                document.getElementById('editCheckIn').value = '09:00';
+                document.getElementById('editCheckOut').value = '18:00';
+                document.getElementById('editBreak').value = 60;
+            }
+        }
+
+        function closeEditModal() {
+            document.getElementById('editModal').classList.remove('active');
+        }
+
+        function saveEditEntry() {
+            const date = new Date(document.getElementById('editDate').value);
+            const checkInTime = document.getElementById('editCheckIn').value;
+            const checkOutTime = document.getElementById('editCheckOut').value;
+            const breakMinutes = Number(document.getElementById('editBreak').value);
+            
+            if (!checkInTime || !checkOutTime) {
+                alert('Please fill all required fields');
+                return;
+            }
+            
+            const checkIn = new Date(date);
+            const [inHour, inMin] = checkInTime.split(':').map(Number);
+            checkIn.setHours(inHour, inMin, 0);
+            
+            const checkOut = new Date(date);
+            const [outHour, outMin] = checkOutTime.split(':').map(Number);
+            checkOut.setHours(outHour, outMin, 0);
+            
+            const totalBreak = breakMinutes * 60000;
+            const totalWorked = checkOut - checkIn - totalBreak;
+            const overtime = Math.max(0, (totalWorked / 3600000) - settings.overtimeThreshold) * 3600000;
+            
+            const history = getHistory();
+            history[date.toDateString()] = {
+                date: date.toDateString(),
+                checkIn: checkIn.toISOString(),
+                checkOut: checkOut.toISOString(),
+                breaks: [],
+                totalBreak,
+                totalWorked,
+                overtime
+            };
+            
+            localStorage.setItem('workHistory', JSON.stringify(history));
+            
+            closeEditModal();
+            loadHistory();
+            updateUI();
+            showNotification('Entry saved successfully!');
+        }
+
+        function editEntry(date) {
+            openEditModal(date);
+        }
+
+        // Export Functions
+        function exportCSV() {
+            const history = getHistory();
+            const month = document.getElementById('historyMonth').value;
+            const [year, monthNum] = month.split('-').map(Number);
+            
+            let csv = 'Date,Check In,Check Out,Break Duration,Total Worked,Overtime\n';
+            
+            for (const [date, entry] of Object.entries(history)) {
+                const entryDate = new Date(date);
+                if (entryDate.getFullYear() === year && entryDate.getMonth() === monthNum - 1) {
+                    csv += `${formatDate(date)},`;
+                    csv += `${new Date(entry.checkIn).toLocaleTimeString()},`;
+                    csv += `${new Date(entry.checkOut).toLocaleTimeString()},`;
+                    csv += `${formatDuration(entry.totalBreak)},`;
+                    csv += `${formatDuration(entry.totalWorked)},`;
+                    csv += `${formatDuration(entry.overtime || 0)}\n`;
+                }
+            }
+            
+            downloadFile(csv, `work-hours-${month}.csv`, 'text/csv');
+        }
+
+        function exportPDF() {
+            const history = getHistory();
+            const month = document.getElementById('historyMonth').value;
+            const [year, monthNum] = month.split('-').map(Number);
+            
+            let html = `
+                <html>
+                <head>
+                    <title>Work Hours Report - ${month}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; }
+                        h1 { color: #1e40af; }
+                        table { width: 100%; border-collapse: collapse; }
+                        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                        th { background-color: #f2f2f2; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Work Hours Report - ${month}</h1>
+                    <table>
+                        <tr>
+                            <th>Date</th>
+                            <th>Check In</th>
+                            <th>Check Out</th>
+                            <th>Break</th>
+                            <th>Total Worked</th>
+                            <th>Overtime</th>
+                        </tr>
+            `;
+            
+            let totalWorked = 0;
+            let totalOvertime = 0;
+            
+            for (const [date, entry] of Object.entries(history)) {
+                const entryDate = new Date(date);
+                if (entryDate.getFullYear() === year && entryDate.getMonth() === monthNum - 1) {
+                    totalWorked += entry.totalWorked;
+                    totalOvertime += entry.overtime || 0;
+                    
+                    html += `
+                        <tr>
+                            <td>${formatDate(date)}</td>
+                            <td>${new Date(entry.checkIn).toLocaleTimeString()}</td>
+                            <td>${new Date(entry.checkOut).toLocaleTimeString()}</td>
+                            <td>${formatDuration(entry.totalBreak)}</td>
+                            <td>${formatDuration(entry.totalWorked)}</td>
+                            <td>${formatDuration(entry.overtime || 0)}</td>
+                        </tr>
+                    `;
+                }
+            }
+            
+            html += `
+                    </table>
+                    <h3>Summary</h3>
+                    <p>Total Hours Worked: ${formatDuration(totalWorked)}</p>
+                    <p>Total Overtime: ${formatDuration(totalOvertime)}</p>
+                </body>
+                </html>
+            `;
+            
+            const win = window.open('', '_blank');
+            win.document.write(html);
+            win.document.close();
+            win.print();
+        }
+
+        function exportAllData() {
+            const data = {
+                history: getHistory(),
+                settings: settings,
+                leaves: getLeaves(),
+                exportDate: new Date().toISOString()
+            };
+            
+            downloadFile(JSON.stringify(data, null, 2), 'work-hours-backup.json', 'application/json');
+        }
+
+        function importData() {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.json';
+            
+            input.onchange = e => {
+                const file = e.target.files[0];
+                const reader = new FileReader();
+                
+                reader.onload = event => {
+                    try {
+                        const data = JSON.parse(event.target.result);
+                        
+                        if (data.history) {
+                            localStorage.setItem('workHistory', JSON.stringify(data.history));
+                        }
+                        if (data.settings) {
+                            localStorage.setItem('workSettings', JSON.stringify(data.settings));
+                        }
+                        if (data.leaves) {
+                            localStorage.setItem('leaves', JSON.stringify(data.leaves));
+                        }
+                        
+                        location.reload();
+                    } catch (error) {
+                        alert('Invalid file format');
+                    }
+                };
+                
+                reader.readAsText(file);
+            };
+            
+            input.click();
+        }
+
+        function clearData() {
+            if (confirm('Are you sure you want to clear all data? This cannot be undone!')) {
+                localStorage.clear();
+                location.reload();
+            }
+        }
+
+        // Utility Functions
+        function formatDuration(ms) {
+            const hours = Math.floor(ms / 3600000);
+            const minutes = Math.floor((ms % 3600000) / 60000);
+            
+            if (hours > 0) {
+                return `${hours}h ${minutes}m`;
+            }
+            return `${minutes}m`;
+        }
+
+        function formatDate(date) {
+            return new Date(date).toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+
+        function downloadFile(content, filename, type) {
+            const blob = new Blob([content], { type });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function showNotification(message, type = 'success') {
+            const notification = document.createElement('div');
+            notification.className = 'notification';
+            notification.textContent = message;
+            notification.style.background = type === 'warning' ? 'var(--warning)' : 'var(--success)';
+            
+            document.body.appendChild(notification);
+            
+            setTimeout(() => {
+                notification.remove();
+            }, 3000);
+        }
+
+        // Notification Functions
+        function requestNotificationPermission() {
+            if ('Notification' in window && Notification.permission === 'default') {
+                Notification.requestPermission();
+            }
+        }
+
+        function sendNotification(title, body) {
+            if ('Notification' in window && Notification.permission === 'granted') {
+                new Notification(title, { body, icon: '⏰' });
+            }
+        }
+
+        function setupReminders() {
+            // Clear existing intervals
+            Object.values(reminderIntervals).forEach(clearInterval);
+            reminderIntervals = {};
+            
+            // Break reminder (every 2 hours)
+            if (settings.breakReminder && state.isCheckedIn && !state.isOnBreak) {
+                reminderIntervals.break = setInterval(() => {
+                    if (state.isCheckedIn && !state.isOnBreak) {
+                        const now = new Date();
+                        const checkIn = new Date(state.checkInTime);
+                        const workedMs = now - checkIn - state.totalBreakTime;
+                        
+                        if (workedMs >= 2 * 3600000) {
+                            sendNotification('Break Reminder', 'You\'ve been working for 2 hours. Time for a break!');
+                        }
+                    }
+                }, 1800000); // 30 minutes
+            }
+            
+            // Checkout reminder (at expected checkout time)
+            if (settings.checkoutReminder && state.isCheckedIn) {
+                const checkIn = new Date(state.checkInTime);
+                const expectedCheckout = new Date(checkIn.getTime() + settings.dailyHours * 3600000 + 3600000); // +1 hour for break
+                const now = new Date();
+                
+                if (expectedCheckout > now) {
+                    const delay = expectedCheckout - now;
+                    reminderIntervals.checkout = setTimeout(() => {
+                        sendNotification('Checkout Reminder', 'Time to check out for the day!');
+                    }, delay);
+                }
+            }
+        }
+
+        // Storage Functions
+        function saveState() {
+            localStorage.setItem('workState', JSON.stringify(state));
+        }
+
+        function loadState() {
+            const saved = localStorage.getItem('workState');
+            if (saved) {
+                const savedState = JSON.parse(saved);
+                
+                // Check if it's a new day
+                if (savedState.currentDate !== new Date().toDateString()) {
+                    // Reset for new day
+                    state = {
+                        isCheckedIn: false,
+                        isOnBreak: false,
+                        checkInTime: null,
+                        breakStartTime: null,
+                        totalBreakTime: 0,
+                        breaks: [],
+                        currentDate: new Date().toDateString()
+                    };
+                } else {
+                    state = savedState;
+                }
+            }
+        }
+
+        function getHistory() {
+            return JSON.parse(localStorage.getItem('workHistory') || '{}');
+        }
+
+        // Service Worker for PWA
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('data:text/javascript,' + encodeURIComponent(`
+                self.addEventListener('install', e => {
+                    e.waitUntil(
+                        caches.open('v1').then(cache => {
+                            return cache.addAll(['/']);
+                        })
+                    );
+                });
+
+                self.addEventListener('fetch', e => {
+                    e.respondWith(
+                        caches.match(e.request).then(response => {
+                            return response || fetch(e.request);
+                        })
+                    );
+                });
+            `));
+        }
+
+        // Initialize on load
+        window.addEventListener('load', init);

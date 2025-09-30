@@ -774,11 +774,11 @@
 
         function updateTimer() {
             if (!state.checkInTime) return;
-            
+
             const now = new Date();
             const checkIn = new Date(state.checkInTime);
             let elapsed = now - checkIn;
-            
+
             // Subtract break time
             if (state.isOnBreak && state.breakStartTime) {
                 const currentBreak = now - new Date(state.breakStartTime);
@@ -786,12 +786,15 @@
             } else {
                 elapsed -= state.totalBreakTime;
             }
-            
+
+            // Prevent negative elapsed time
+            elapsed = Math.max(0, elapsed);
+
             const hours = Math.floor(elapsed / 3600000);
             const minutes = Math.floor((elapsed % 3600000) / 60000);
             const seconds = Math.floor((elapsed % 60000) / 1000);
-            
-            document.getElementById('timer').textContent = 
+
+            document.getElementById('timer').textContent =
                 `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
         }
 
@@ -801,9 +804,11 @@
             state.checkInTime = new Date().toISOString();
             state.totalBreakTime = 0;
             state.breaks = [];
-            
+            state.overtimeAlerted = false;
+
             saveState();
             updateUI();
+            setupReminders();
             showNotification('Checked in successfully!');
         }
 
@@ -1235,38 +1240,41 @@
             const canvas = ctx.canvas;
             const width = canvas.width = canvas.offsetWidth * 2;
             const height = canvas.height = 400;
-            
+
             ctx.clearRect(0, 0, width, height);
             ctx.scale(2, 2);
-            
+
             const padding = 40;
             const maxValue = Math.max(...data.map(Number), 10);
             const scale = (200 - padding) / maxValue;
-            
+
+            // Prevent division by zero
+            const divisor = Math.max(1, labels.length - 1);
+
             // Draw line
             ctx.strokeStyle = '#1e40af';
             ctx.lineWidth = 2;
             ctx.beginPath();
-            
+
             labels.forEach((label, i) => {
-                const x = padding + (i * (canvas.offsetWidth - padding * 2) / (labels.length - 1));
+                const x = padding + (i * (canvas.offsetWidth - padding * 2) / divisor);
                 const y = 200 - (data[i] * scale) - padding;
-                
+
                 if (i === 0) {
                     ctx.moveTo(x, y);
                 } else {
                     ctx.lineTo(x, y);
                 }
             });
-            
+
             ctx.stroke();
-            
+
             // Draw points
             ctx.fillStyle = '#1e40af';
             labels.forEach((label, i) => {
-                const x = padding + (i * (canvas.offsetWidth - padding * 2) / (labels.length - 1));
+                const x = padding + (i * (canvas.offsetWidth - padding * 2) / divisor);
                 const y = 200 - (data[i] * scale) - padding;
-                
+
                 ctx.beginPath();
                 ctx.arc(x, y, 3, 0, Math.PI * 2);
                 ctx.fill();

@@ -129,9 +129,9 @@ function checkOut() {
     
     // Save to history
     const history = getHistory();
-    const today = new Date().toDateString();
+    const sessionDay = checkInTime.toDateString();
     const todayEntry = {
-        date: today,
+        date: sessionDay,
         checkIn: state.checkInTime,
         checkOut: checkOutTime.toISOString(),
         breaks: state.breaks,
@@ -140,7 +140,7 @@ function checkOut() {
         overtime: Math.max(0, workedHours - settings.overtimeThreshold) * 3600000
     };
     
-    history[today] = todayEntry;
+    history[sessionDay] = todayEntry;
     localStorage.setItem('workHistory', JSON.stringify(history));
     
     // Reset state

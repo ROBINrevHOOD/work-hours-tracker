@@ -23,14 +23,62 @@ let settings = {
 let timerInterval;
 let reminderIntervals = {};
 
-const SUPABASE_URL = window.ENV?.SUPABASE_URL;
-const SUPABASE_ANON_KEY = window.ENV?.SUPABASE_ANON_KEY;
-const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase)
-    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
-    : null;
+let SUPABASE_URL = null;
+let SUPABASE_ANON_KEY = null;
+let supabase = null;
+let supabaseWarningLogged = false;
 
-if (!supabase) {
-    console.warn('Supabase client not configured; falling back to local storage only.');
+function parseEnvText(text) {
+    return text.split(/\r?\n/).reduce((acc, rawLine) => {
+        const line = rawLine.trim();
+        if (!line || line.startsWith('#')) return acc;
+        const eqIndex = line.indexOf('=');
+        if (eqIndex === -1) return acc;
+        const key = line.slice(0, eqIndex).trim();
+        let value = line.slice(eqIndex + 1).trim();
+        const firstChar = value[0];
+        const lastChar = value[value.length - 1];
+        if (firstChar && firstChar === lastChar && (firstChar === '"' || firstChar === "'")) {
+            value = value.slice(1, -1);
+        }
+        acc[key] = value;
+        return acc;
+    }, {});
+}
+
+async function loadEnvFromFile() {
+    try {
+        const response = await fetch('.env', { cache: 'no-store' });
+        if (!response.ok) return null;
+        const text = await response.text();
+        const parsed = parseEnvText(text);
+        if (Object.keys(parsed).length === 0) return null;
+        window.ENV = { ...(window.ENV || {}), ...parsed };
+        return window.ENV;
+    } catch (error) {
+        console.warn('Unable to load .env file for Supabase configuration', error);
+        return null;
+    }
+}
+
+async function configureSupabase() {
+    if (supabase) return supabase;
+
+    const env = window.ENV || await loadEnvFromFile();
+    SUPABASE_URL = env?.SUPABASE_URL || SUPABASE_URL;
+    SUPABASE_ANON_KEY = env?.SUPABASE_ANON_KEY || SUPABASE_ANON_KEY;
+
+    if (SUPABASE_URL && SUPABASE_ANON_KEY && window.supabase?.createClient) {
+        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        return supabase;
+    }
+
+    if (!supabaseWarningLogged) {
+        console.warn('Supabase client not configured; falling back to local storage only.');
+        supabaseWarningLogged = true;
+    }
+
+    return null;
 }
 
 let historyCache = {};
@@ -1796,4 +1844,7 @@ if ('serviceWorker' in navigator) {
 }
 
 // Initialize on load
-window.addEventListener('load', init);
+window.addEventListener('load', async () => {
+    await configureSupabase();
+    await init();
+});

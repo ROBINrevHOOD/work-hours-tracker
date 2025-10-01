@@ -692,9 +692,9 @@
 
                 <div class="settings-section">
                     <h3>Data Management</h3>
-                    <button class="btn btn-secondary" style="padding: 10px;" onclick="exportAllData()">📦 Export All Data</button>
-                    <button class="btn btn-warning" style="padding: 10px;" onclick="importData()">📥 Import Data</button>
-                    <button class="btn btn-danger" style="padding: 10px;" onclick="clearData()">🗑️ Clear All Data</button>
+                    <button class="btn btn-secondary" onclick="exportAllData()">📦 Export All Data</button>
+                    <button class="btn btn-warning" onclick="importData()">📥 Import Data</button>
+                    <button class="btn btn-danger" onclick="clearData()">🗑️ Clear All Data</button>
                 </div>
             </div>
         </div>
@@ -753,6 +753,7 @@
             <button class="btn btn-primary" onclick="saveLeave()">Save</button>
         </div>
     </div>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.1/dist/umd/supabase.min.js" defer></script>
     <script src="app.js" defer></script>
 </body>
 </html>

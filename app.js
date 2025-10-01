@@ -6,7 +6,8 @@ let state = {
     breakStartTime: null,
     totalBreakTime: 0,
     breaks: [],
-    currentDate: new Date().toDateString()
+    currentDate: new Date().toDateString(),
+    overtimeAlerted: false
 };
 
 let settings = {
@@ -46,6 +47,19 @@ function parseEnvText(text) {
     }, {});
 }
 
+function hydrateEnvFromMeta() {
+    window.ENV = window.ENV || {};
+    const meta = name => document.querySelector(`meta[name="${name}"]`);
+    const urlMeta = meta('supabase-url');
+    const keyMeta = meta('supabase-anon-key');
+    if (urlMeta?.content) {
+        window.ENV.SUPABASE_URL = urlMeta.content.trim();
+    }
+    if (keyMeta?.content) {
+        window.ENV.SUPABASE_ANON_KEY = keyMeta.content.trim();
+    }
+}
+
 async function loadEnvFromFile() {
     try {
         const response = await fetch('.env', { cache: 'no-store' });
@@ -64,7 +78,17 @@ async function loadEnvFromFile() {
 async function configureSupabase() {
     if (supabase) return supabase;
 
-    const env = window.ENV || await loadEnvFromFile();
+    hydrateEnvFromMeta();
+
+    let env = window.ENV;
+    if (!env || (!env.SUPABASE_URL || !env.SUPABASE_ANON_KEY)) {
+        const fileEnv = await loadEnvFromFile();
+        if (fileEnv) {
+            env = { ...(env || {}), ...fileEnv };
+            window.ENV = env;
+        }
+    }
+
     SUPABASE_URL = env?.SUPABASE_URL || SUPABASE_URL;
     SUPABASE_ANON_KEY = env?.SUPABASE_ANON_KEY || SUPABASE_ANON_KEY;
 
@@ -158,6 +182,44 @@ async function ensureLeavesLoaded(force = false) {
     }));
     localStorage.setItem('leaves', JSON.stringify(leavesCache));
     leavesLoaded = true;
+}
+
+function normalizeHistoryObject(input) {
+    if (!input) return {};
+
+    const normalized = {};
+    const addEntry = entry => {
+        if (!entry) return;
+        const date = entry.date || entry.session_date;
+        if (!date) return;
+
+        const key = new Date(date).toDateString();
+        if (!key || key === 'Invalid Date') return;
+
+        normalized[key] = {
+            date: key,
+            checkIn: entry.checkIn || entry.check_in || null,
+            checkOut: entry.checkOut || entry.check_out || null,
+            breaks: Array.isArray(entry.breaks) ? entry.breaks : [],
+            totalBreak: Number(entry.totalBreak ?? entry.total_break_ms ?? 0) || 0,
+            totalWorked: Number(entry.totalWorked ?? entry.total_worked_ms ?? 0) || 0,
+            overtime: Number(entry.overtime ?? entry.overtime_ms ?? 0) || 0
+        };
+    };
+
+    if (Array.isArray(input)) {
+        input.forEach(addEntry);
+    } else if (typeof input === 'object') {
+        Object.entries(input).forEach(([key, value]) => {
+            if (value && typeof value === 'object' && !value.date) {
+                addEntry({ ...value, date: key });
+            } else {
+                addEntry({ ...(value || {}), date: value?.date || key });
+            }
+        });
+    }
+
+    return normalized;
 }
 
 async function saveHistoryEntry(entry) {
@@ -399,10 +461,12 @@ async function checkOut() {
         breakStartTime: null,
         totalBreakTime: 0,
         breaks: [],
-        currentDate: new Date().toDateString()
+        currentDate: new Date().toDateString(),
+        overtimeAlerted: false
     };
     
     await saveState();
+    setupReminders();
     updateUI();
     await loadHistory();
     showNotification(`Checked out! Worked ${formatDuration(workedMs)}`);
@@ -1326,6 +1390,11 @@ async function exportPDF() {
     `;
     
     const win = window.open('', '_blank');
+    if (!win) {
+        downloadFile(html, `work-hours-${month}.html`, 'text/html');
+        showNotification('Popup blocked. Downloaded report instead.', 'warning');
+        return;
+    }
     win.document.write(html);
     win.document.close();
     win.print();
@@ -1591,11 +1660,42 @@ function parseCsvDate(raw) {
     return new Date(NaN);
 }
 
-function clearData() {
-    if (confirm('Are you sure you want to clear all data? This cannot be undone!')) {
-        localStorage.clear();
-        location.reload();
+async function clearData() {
+    const confirmed = confirm('Are you sure you want to clear all data? This cannot be undone!');
+    if (!confirmed) return;
+
+    Object.values(reminderIntervals).forEach(timeoutId => clearTimeout(timeoutId));
+    reminderIntervals = {};
+
+    if (supabase) {
+        try {
+            await Promise.all([
+                supabase.from('work_sessions').delete().not('session_date', 'is', null),
+                supabase.from('leaves').delete().not('id', 'is', null),
+                supabase.from('settings').delete().eq('id', 'singleton'),
+                supabase.from('work_state').delete().eq('id', 'singleton')
+            ]);
+        } catch (error) {
+            console.error('Failed to clear Supabase data', error);
+        }
     }
+
+    historyCache = {};
+    leavesCache = [];
+    historyLoaded = false;
+    leavesLoaded = false;
+    localStorage.clear();
+
+    if ('caches' in window) {
+        try {
+            const cacheNames = await caches.keys();
+            await Promise.all(cacheNames.filter(name => name.startsWith('work-hours-tracker')).map(name => caches.delete(name)));
+        } catch (error) {
+            console.error('Failed to clear caches', error);
+        }
+    }
+
+    location.reload();
 }
 
 // Utility Functions
@@ -1734,7 +1834,7 @@ function sendNotification(title, body) {
 
 function setupReminders() {
     // Clear existing intervals
-    Object.values(reminderIntervals).forEach(clearInterval);
+    Object.values(reminderIntervals).forEach(timeoutId => clearTimeout(timeoutId));
     reminderIntervals = {};
     
     // Checkout reminder (at expected checkout time)
@@ -1802,7 +1902,8 @@ async function loadState() {
             breakStartTime: null,
             totalBreakTime: 0,
             breaks: [],
-            currentDate: new Date().toDateString()
+            currentDate: new Date().toDateString(),
+            overtimeAlerted: false
         };
         await saveState();
     }
